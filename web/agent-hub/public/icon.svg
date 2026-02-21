@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Agent Hub icon">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0f7b60"/>
+      <stop offset="100%" stop-color="#df5c2f"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="#f4efe2"/>
+  <circle cx="78" cy="126" r="26" fill="url(#g)"/>
+  <circle cx="178" cy="88" r="22" fill="#0f7b60"/>
+  <circle cx="178" cy="168" r="22" fill="#df5c2f"/>
+  <path d="M98 124h58M100 136h56M156 103l16 9M156 151l16-9" stroke="#13241f" stroke-width="9" stroke-linecap="round"/>
+</svg>

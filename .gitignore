@@ -3,3 +3,7 @@ bin/
 
 # macOS
 .DS_Store
+
+# web ui dependencies/build
+web/agent-hub/node_modules/
+web/agent-hub/dist/

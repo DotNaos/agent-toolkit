@@ -8,6 +8,38 @@
 - Each tool must have its own binary name.
 - Do not use `agent-toolkit` as the runtime CLI command name.
 
+## skills.sh compatibility
+
+Every tool in this monorepo must ship a matching agent skill.
+
+- Skill files live under `skills/<tool-name>/SKILL.md`.
+- Current skills:
+  - `skills/ui-loop/SKILL.md`
+  - `skills/agent-chat/SKILL.md`
+  - `skills/agent-hub/SKILL.md`
+
+Install all skills from this repo (global, non-interactive):
+
+```bash
+npx skills add DotNaos/agent-toolkit/skills --all -g
+```
+
+Install one skill only:
+
+```bash
+npx skills add DotNaos/agent-toolkit/skills --skill ui-loop -g -y
+```
+
+Preview what is available before installing:
+
+```bash
+npx skills add DotNaos/agent-toolkit/skills --list
+```
+
+Reference:
+- https://skills.sh/
+- `npx skills --help`
+
 ## Current milestone tool
 
 The current Milestone 1/1.1 UI automation tool can be built with any binary name.
@@ -23,6 +55,44 @@ go build -o bin/ui-loop .
 
 Because the command name is derived from the binary filename, this works with any chosen tool name.
 
+## Agent chat (always-on workers)
+
+`agent-chat watch` can keep an agent inbox alive without manually running `wait` each time.
+
+Example:
+
+```bash
+export AGENT_CHAT_SERVER_URL=http://127.0.0.1:45217
+export AGENT_CHAT_DB_PATH=/tmp/agent-chat-shared.db
+
+# Always-on consumer (acks automatically)
+agent-chat watch --agent agent-a --thread collab --auto-ack
+
+# Or run a handler command per message (ack after handler success)
+agent-chat watch --agent agent-a --thread collab --handler 'cat >/tmp/last-message.json'
+```
+
+## Agent hub (web/pwa + human approvals)
+
+`agent-hub` is a local web app for realtime group chat (`owner` + agents) with mandatory human-in-the-loop approvals for risky actions.
+The UI stack uses `React + TailwindCSS + shadcn/ui`.
+
+Run (one command, bun-based):
+
+```bash
+./scripts/agent-hub-dev.sh
+```
+
+Then open:
+
+- http://127.0.0.1:5173
+
+Default behavior:
+
+- Realtime updates via SSE (`/v1/events/stream`)
+- Risky dispatches (write/edit/delete/deploy/external side effects) create blocking approvals
+- Approval dialog supports enum choices, multi-choice arrays, and free text
+
 ## Tool isolation policy (must follow)
 
 This repository is a monorepo of multiple independent CLI tools.  
@@ -36,6 +106,7 @@ Tools must be developed in isolation so multiple agents can work in parallel wit
 - Existing paths in this repo currently map like this:
   - UI automation tool: `main.go`, `cmd/`, `tools/axdump/`
   - Agent chat tool: `cmd/agent-chat/`, `internal/chatcli/`, `internal/chatd/`
+  - Agent hub tool: `cmd/agent-hub/`, `internal/hubapi/`, `internal/hubstore/`, `internal/hubworker/`, `web/agent-hub/`
 
 ### 2) No implicit cross-tool edits
 

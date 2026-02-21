@@ -20,6 +20,7 @@ func init() {
 
 	rootCmd.AddCommand(sendCmd)
 	rootCmd.AddCommand(waitCmd)
+	rootCmd.AddCommand(watchCmd)
 	rootCmd.AddCommand(ackCmd)
 	rootCmd.AddCommand(daemonCmd)
 }
