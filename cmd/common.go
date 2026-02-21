@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"agent-toolkit/internal/shared/cliio"
 )
 
 type Bounds struct {
@@ -60,24 +62,11 @@ type axNode struct {
 }
 
 func FormatErrorJSON(err error) string {
-	if err == nil {
-		return `{"status":"error","message":"unknown error"}`
-	}
-
-	payload, marshalErr := json.Marshal(map[string]string{
-		"status":  "error",
-		"message": err.Error(),
-	})
-	if marshalErr != nil {
-		return `{"status":"error","message":"failed to marshal error"}`
-	}
-	return string(payload)
+	return cliio.FormatErrorJSON(err)
 }
 
 func outputJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetEscapeHTML(false)
-	return enc.Encode(v)
+	return cliio.OutputJSON(v)
 }
 
 func toolkitDir() string {

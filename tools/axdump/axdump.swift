@@ -228,7 +228,7 @@ guard let app = NSWorkspace.shared.frontmostApplication else {
 
 let appElement = AXUIElementCreateApplication(app.processIdentifier)
 var visited = Set<UInt>()
-let root = dumpNode(appElement, depth: 0, maxDepth: 8, visited: &visited)
+let root = dumpNode(appElement, depth: 0, maxDepth: 25, visited: &visited)
 
 emitJSON(
     AXDumpOutput(
