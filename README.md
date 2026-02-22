@@ -16,6 +16,7 @@ Every tool in this monorepo must ship a matching agent skill.
 - Current skills:
   - `skills/ui-loop/SKILL.md`
   - `skills/agent-chat/SKILL.md`
+  - `skills/agent-memory/SKILL.md`
   - `skills/agent-hub/SKILL.md`
 
 Install all skills from this repo (global, non-interactive):
@@ -70,6 +71,24 @@ agent-chat watch --agent agent-a --thread collab --auto-ack
 
 # Or run a handler command per message (ack after handler success)
 agent-chat watch --agent agent-a --thread collab --handler 'cat >/tmp/last-message.json'
+```
+
+## Agent memory (local preferences + proxy hint injection)
+
+`agent-memory` stores persistent coding preferences and repo-specific guidelines (for example `bun` for frontend and `uv` for Python), and exposes a local API that a MITM proxy addon can call to inject short hints into provider requests.
+
+It now also includes a Phase-1 `jj`-backed v2 memory flow (`/v2/*`) with:
+- immutable episode commits
+- immutable consolidated snapshots (`rev-N`)
+- snapshot-based proxy context injection with prompt hygiene and hard memory budgeting
+
+Example:
+
+```bash
+go build -o bin/agent-memory ./cmd/agent-memory
+./bin/agent-memory daemon
+./bin/agent-memory memory seed
+./bin/agent-memory repo sync --repo-path /path/to/repo
 ```
 
 ## Agent hub (web/pwa + human approvals)
