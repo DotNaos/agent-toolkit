@@ -14,10 +14,11 @@ Every tool in this monorepo must ship a matching agent skill.
 
 - Skill files live under `skills/<tool-name>/SKILL.md`.
 - Current skills:
-  - `skills/ui-loop/SKILL.md`
-  - `skills/agent-chat/SKILL.md`
-  - `skills/agent-memory/SKILL.md`
-  - `skills/agent-hub/SKILL.md`
+    - `skills/ui-loop/SKILL.md`
+    - `skills/agent-chat/SKILL.md`
+    - `skills/agent-memory/SKILL.md`
+    - `skills/agent-hub/SKILL.md`
+    - `skills/repo-branch-protection/SKILL.md`
 
 Install all skills from this repo (global, non-interactive):
 
@@ -38,8 +39,21 @@ npx skills add DotNaos/agent-toolkit/skills --list
 ```
 
 Reference:
+
 - https://skills.sh/
 - `npx skills --help`
+
+## Branch protection setup skill
+
+This repository also ships a reusable skill to standardize branch protection and PR-first workflows across repositories:
+
+- `skills/repo-branch-protection/SKILL.md`
+
+Install just this one:
+
+```bash
+npx skills add DotNaos/agent-toolkit/skills --skill repo-branch-protection -g -y
+```
 
 ## Current milestone tool
 
@@ -78,6 +92,7 @@ agent-chat watch --agent agent-a --thread collab --handler 'cat >/tmp/last-messa
 `agent-memory` stores persistent coding preferences and repo-specific guidelines (for example `bun` for frontend and `uv` for Python), and exposes a local API that a MITM proxy addon can call to inject short hints into provider requests.
 
 It now also includes a Phase-1 `jj`-backed v2 memory flow (`/v2/*`) with:
+
 - immutable episode commits
 - immutable consolidated snapshots (`rev-N`)
 - snapshot-based proxy context injection with prompt hygiene and hard memory budgeting
@@ -114,7 +129,7 @@ Default behavior:
 
 ## Tool isolation policy (must follow)
 
-This repository is a monorepo of multiple independent CLI tools.  
+This repository is a monorepo of multiple independent CLI tools.
 Tools must be developed in isolation so multiple agents can work in parallel without blocking each other.
 
 ### 1) Ownership boundaries
@@ -123,9 +138,9 @@ Tools must be developed in isolation so multiple agents can work in parallel wit
 - A tool owns its own implementation packages under `internal/<tool-name>*`.
 - A tool-specific helper (for example platform code) should live under a tool-specific path (for example `tools/<tool-name>/...`).
 - Existing paths in this repo currently map like this:
-  - UI automation tool: `main.go`, `cmd/`, `tools/axdump/`
-  - Agent chat tool: `cmd/agent-chat/`, `internal/chatcli/`, `internal/chatd/`
-  - Agent hub tool: `cmd/agent-hub/`, `internal/hubapi/`, `internal/hubstore/`, `internal/hubworker/`, `web/agent-hub/`
+    - UI automation tool: `main.go`, `cmd/`, `tools/axdump/`
+    - Agent chat tool: `cmd/agent-chat/`, `internal/chatcli/`, `internal/chatd/`
+    - Agent hub tool: `cmd/agent-hub/`, `internal/hubapi/`, `internal/hubstore/`, `internal/hubworker/`, `web/agent-hub/`
 
 ### 2) No implicit cross-tool edits
 
@@ -149,7 +164,7 @@ Tools must be developed in isolation so multiple agents can work in parallel wit
 ### 4) New tools
 
 - Every new tool must have:
-  - its own binary name
-  - isolated package paths
-  - tests in its own package tree
+    - its own binary name
+    - isolated package paths
+    - tests in its own package tree
 - Keep the public CLI contract stable per tool (JSON output shape should not accidentally change across tools).
