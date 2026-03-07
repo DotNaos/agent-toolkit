@@ -1,4 +1,4 @@
-package cmd
+package uilloopcli
 
 import (
 	"encoding/json"
@@ -79,7 +79,7 @@ var mapUICmd = &cobra.Command{
 func init() {
 	mapUICmd.Flags().StringVar(&mapUIStateFile, "state-file", defaultStatePath(), "Path to store mapped UI state JSON")
 	mapUICmd.Flags().StringVar(&mapUIScreenShot, "screenshot", defaultScreenshotPath(), "Path to store screenshot")
-	mapUICmd.Flags().StringVar(&mapUIAXDumpSrc, "axdump-source", "tools/axdump/axdump.swift", "Path to axdump.swift source")
+	mapUICmd.Flags().StringVar(&mapUIAXDumpSrc, "axdump-source", "tools/ui-loop/axdump.swift", "Path to axdump.swift source")
 	mapUICmd.Flags().StringVar(&mapUIAXDumpBin, "axdump-bin", defaultAXDumpBinaryPath(), "Path to compiled axdump binary")
 }
 

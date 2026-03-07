@@ -18,6 +18,7 @@ func main() {
 	var listen string
 	var dbPath string
 	var webDir string
+	var delegateConfigPath string
 
 	cmd := &cobra.Command{
 		Use:           "agent-hub",
@@ -36,9 +37,10 @@ func main() {
 			}
 
 			server, err := hubapi.NewServer(hubapi.Config{
-				ListenAddr: listen,
-				DBPath:     resolvedDB,
-				WebDir:     resolvedWebDir,
+				ListenAddr:         listen,
+				DBPath:             resolvedDB,
+				WebDir:             resolvedWebDir,
+				DelegateConfigPath: delegateConfigPath,
 			})
 			if err != nil {
 				return err
@@ -83,6 +85,8 @@ func main() {
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:46001", "Hub listen address")
 	cmd.Flags().StringVar(&dbPath, "db", "~/.agent-toolkit/hub.db", "Path to hub sqlite database")
 	cmd.Flags().StringVar(&webDir, "web-dir", "web/agent-hub/dist", "Path to web UI assets")
+	cmd.Flags().StringVar(&delegateConfigPath, "delegate-config", "agent-delegate.json", "Path to agent-delegate config JSON")
+	cmd.AddCommand(newCompletionCmd(cmd))
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Println(cliio.FormatErrorJSON(err))
@@ -127,4 +131,27 @@ func resolveWebDir(path string) (string, error) {
 	}
 
 	return resolved, nil
+}
+
+func newCompletionCmd(root *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:   "completion [zsh]",
+		Short: "Generate the autocompletion script for the specified shell",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "zsh":
+				return root.GenZshCompletion(os.Stdout)
+			case "bash":
+				return root.GenBashCompletion(os.Stdout)
+			case "fish":
+				return root.GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return root.GenPowerShellCompletionWithDesc(os.Stdout)
+			default:
+				return fmt.Errorf("unsupported shell %q", args[0])
+			}
+		},
+		ValidArgs: []string{"bash", "fish", "powershell", "zsh"},
+	}
 }

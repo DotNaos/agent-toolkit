@@ -1,0 +1,10 @@
+{
+  "name": "agent-delegate",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "run": "bun run src/index.ts",
+    "test": "bun test"
+  }
+}

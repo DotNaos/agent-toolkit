@@ -1,10 +1,13 @@
 package hubworker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"agent-toolkit/internal/delegaterun"
 	"agent-toolkit/internal/hubstore"
 )
 
@@ -18,17 +21,23 @@ type EventPublisher interface {
 	Publish(event Event)
 }
 
+type DelegateRunner interface {
+	Run(ctx context.Context, req delegaterun.Request, opts delegaterun.RunOptions) (delegaterun.Result, error)
+}
+
 type Manager struct {
 	store           *hubstore.Store
 	publisher       EventPublisher
+	delegateRunner  DelegateRunner
 	approvalTimeout time.Duration
 	pollInterval    time.Duration
 }
 
-func NewManager(store *hubstore.Store, publisher EventPublisher) *Manager {
+func NewManager(store *hubstore.Store, publisher EventPublisher, delegateRunner DelegateRunner) *Manager {
 	return &Manager{
 		store:           store,
 		publisher:       publisher,
+		delegateRunner:  delegateRunner,
 		approvalTimeout: 15 * time.Minute,
 		pollInterval:    1 * time.Second,
 	}
@@ -57,6 +66,27 @@ func (m *Manager) DispatchAgent(conversationID, agentID, prompt string, metadata
 		"status":      string(hubstore.DispatchStatusRunning),
 	})
 
+	delegateReq, hasDelegate, err := parseDelegateRequest(prompt, metadata)
+	if err != nil {
+		_ = m.store.UpdateDispatchStatus(dispatch.ID, hubstore.DispatchStatusFailed)
+		return nil, err
+	}
+
+	risk := delegaterun.AssessRisk(prompt, metadata, delegateReq.Mode)
+	if hasDelegate {
+		if risk.ApprovalRequired {
+			approval, err := m.createApproval(conversationID, agentID, dispatch.ID, delegateReq, risk)
+			if err != nil {
+				return nil, err
+			}
+			go m.awaitApproval(dispatch.ID, approval.ID, conversationID, agentID, prompt, &delegateReq)
+			dispatch.Status = hubstore.DispatchStatusWaitingApproval
+			return dispatch, nil
+		}
+		go m.runDelegateDispatch(dispatch.ID, conversationID, agentID, delegateReq, false)
+		return dispatch, nil
+	}
+
 	risky, reason := IsRiskyAction(prompt, metadata)
 	if !risky {
 		msg, err := m.store.AddMessage(hubstore.AddMessageParams{
@@ -79,6 +109,60 @@ func (m *Manager) DispatchAgent(conversationID, agentID, prompt string, metadata
 		return dispatch, nil
 	}
 
+	approval, err := m.createLegacyApproval(conversationID, agentID, dispatch.ID, reason)
+	if err != nil {
+		return nil, err
+	}
+
+	go m.awaitApproval(dispatch.ID, approval.ID, conversationID, agentID, prompt, nil)
+
+	dispatch.Status = hubstore.DispatchStatusWaitingApproval
+	return dispatch, nil
+}
+
+func (m *Manager) createApproval(conversationID, agentID, dispatchID string, delegateReq delegaterun.Request, risk delegaterun.Risk) (*hubstore.ApprovalRequest, error) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"decision": map[string]any{
+				"type": "string",
+				"enum": []string{"approve", "reject", "select"},
+			},
+			"options": map[string]any{
+				"type":  "array",
+				"items": map[string]any{"type": "string", "enum": []string{"full", "limited", "dry-run"}},
+			},
+			"note": map[string]any{
+				"type": "string",
+			},
+		},
+	}
+	schemaJSON, _ := json.Marshal(schema)
+
+	approval, err := m.store.CreateApprovalRequest(hubstore.CreateApprovalRequestParams{
+		ConversationID: conversationID,
+		AgentID:        agentID,
+		Title:          "Approval required for delegated action",
+		Description:    fmt.Sprintf("Delegated adapter %s blocked: %s", delegateReq.Adapter, risk.Reason),
+		SchemaJSON:     string(schemaJSON),
+		RiskLevel:      "high",
+		ExpiresAt:      time.Now().UTC().Add(m.approvalTimeout),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_ = m.store.UpdateDispatchStatus(dispatchID, hubstore.DispatchStatusWaitingApproval)
+	m.publish("approval.requested", conversationID, map[string]any{"approval": approval, "dispatch_id": dispatchID})
+	m.publish("agent.status", conversationID, map[string]any{
+		"dispatch_id": dispatchID,
+		"agent_id":    agentID,
+		"status":      string(hubstore.DispatchStatusWaitingApproval),
+	})
+	return approval, nil
+}
+
+func (m *Manager) createLegacyApproval(conversationID, agentID, dispatchID, reason string) (*hubstore.ApprovalRequest, error) {
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -110,21 +194,17 @@ func (m *Manager) DispatchAgent(conversationID, agentID, prompt string, metadata
 		return nil, err
 	}
 
-	_ = m.store.UpdateDispatchStatus(dispatch.ID, hubstore.DispatchStatusWaitingApproval)
-	m.publish("approval.requested", conversationID, map[string]any{"approval": approval, "dispatch_id": dispatch.ID})
+	_ = m.store.UpdateDispatchStatus(dispatchID, hubstore.DispatchStatusWaitingApproval)
+	m.publish("approval.requested", conversationID, map[string]any{"approval": approval, "dispatch_id": dispatchID})
 	m.publish("agent.status", conversationID, map[string]any{
-		"dispatch_id": dispatch.ID,
+		"dispatch_id": dispatchID,
 		"agent_id":    agentID,
 		"status":      string(hubstore.DispatchStatusWaitingApproval),
 	})
-
-	go m.awaitApproval(dispatch.ID, approval.ID, conversationID, agentID, prompt)
-
-	dispatch.Status = hubstore.DispatchStatusWaitingApproval
-	return dispatch, nil
+	return approval, nil
 }
 
-func (m *Manager) awaitApproval(dispatchID, approvalID, conversationID, agentID, prompt string) {
+func (m *Manager) awaitApproval(dispatchID, approvalID, conversationID, agentID, prompt string, delegateReq *delegaterun.Request) {
 	for {
 		_ = m.expireApprovals()
 		approval, err := m.store.GetApprovalRequest(approvalID)
@@ -150,6 +230,11 @@ func (m *Manager) awaitApproval(dispatchID, approvalID, conversationID, agentID,
 				"agent_id":    agentID,
 				"status":      string(hubstore.DispatchStatusRunning),
 			})
+			m.publish("approval.resolved", conversationID, map[string]any{"approval": approval, "dispatch_id": dispatchID})
+			if delegateReq != nil {
+				m.runDelegateDispatch(dispatchID, conversationID, agentID, *delegateReq, true)
+				return
+			}
 			msg, _ := m.store.AddMessage(hubstore.AddMessageParams{
 				ConversationID: conversationID,
 				FromID:         agentID,
@@ -165,7 +250,6 @@ func (m *Manager) awaitApproval(dispatchID, approvalID, conversationID, agentID,
 				"agent_id":    agentID,
 				"status":      string(hubstore.DispatchStatusCompleted),
 			})
-			m.publish("approval.resolved", conversationID, map[string]any{"approval": approval, "dispatch_id": dispatchID})
 			return
 		case hubstore.ApprovalStatusRejected, hubstore.ApprovalStatusExpired:
 			msg, _ := m.store.AddMessage(hubstore.AddMessageParams{
@@ -201,4 +285,133 @@ func (m *Manager) publish(eventType, conversationID string, data map[string]any)
 		return
 	}
 	m.publisher.Publish(Event{Type: eventType, ConversationID: conversationID, Data: data})
+}
+
+func (m *Manager) runDelegateDispatch(dispatchID, conversationID, agentID string, req delegaterun.Request, approvalGranted bool) {
+	if m.delegateRunner == nil {
+		m.failDispatch(dispatchID, conversationID, agentID, "delegate runner is not configured")
+		return
+	}
+
+	result, err := m.delegateRunner.Run(context.Background(), req, delegaterun.RunOptions{ApprovalGranted: approvalGranted})
+	if err != nil {
+		m.failDispatch(dispatchID, conversationID, agentID, err.Error())
+		return
+	}
+
+	switch result.Status {
+	case delegaterun.StatusCompleted:
+		body := result.FinalText
+		if strings.TrimSpace(body) == "" {
+			body = "Delegated task completed with no final text."
+		}
+		if len(result.Artifacts) > 0 {
+			body = fmt.Sprintf("%s\n\nArtifacts: %d file(s).", body, len(result.Artifacts))
+		}
+		msg, _ := m.store.AddMessage(hubstore.AddMessageParams{
+			ConversationID: conversationID,
+			FromID:         agentID,
+			Kind:           hubstore.MessageKindSystem,
+			Body:           fmt.Sprintf("[%s] %s", result.Adapter, body),
+		})
+		if msg != nil {
+			m.publish("message.created", conversationID, map[string]any{"message": msg})
+		}
+		_ = m.store.UpdateDispatchStatus(dispatchID, hubstore.DispatchStatusCompleted)
+		m.publish("agent.status", conversationID, map[string]any{
+			"dispatch_id": dispatchID,
+			"agent_id":    agentID,
+			"status":      string(hubstore.DispatchStatusCompleted),
+			"adapter":     result.Adapter,
+		})
+	case delegaterun.StatusBlocked:
+		_ = m.store.UpdateDispatchStatus(dispatchID, hubstore.DispatchStatusRejected)
+		msg, _ := m.store.AddMessage(hubstore.AddMessageParams{
+			ConversationID: conversationID,
+			FromID:         agentID,
+			Kind:           hubstore.MessageKindSystem,
+			Body:           fmt.Sprintf("[%s] Delegated task blocked: %s", result.Adapter, result.Risk.Reason),
+		})
+		if msg != nil {
+			m.publish("message.created", conversationID, map[string]any{"message": msg})
+		}
+		m.publish("agent.status", conversationID, map[string]any{
+			"dispatch_id": dispatchID,
+			"agent_id":    agentID,
+			"status":      string(hubstore.DispatchStatusRejected),
+			"adapter":     result.Adapter,
+			"reason":      result.Risk.Reason,
+		})
+	default:
+		reason := strings.TrimSpace(result.Stderr)
+		if reason == "" {
+			reason = "delegated task failed"
+		}
+		m.failDispatch(dispatchID, conversationID, agentID, fmt.Sprintf("[%s] %s", result.Adapter, reason))
+	}
+}
+
+func (m *Manager) failDispatch(dispatchID, conversationID, agentID, reason string) {
+	_ = m.store.UpdateDispatchStatus(dispatchID, hubstore.DispatchStatusFailed)
+	msg, _ := m.store.AddMessage(hubstore.AddMessageParams{
+		ConversationID: conversationID,
+		FromID:         agentID,
+		Kind:           hubstore.MessageKindSystem,
+		Body:           reason,
+	})
+	if msg != nil {
+		m.publish("message.created", conversationID, map[string]any{"message": msg})
+	}
+	m.publish("agent.status", conversationID, map[string]any{
+		"dispatch_id": dispatchID,
+		"agent_id":    agentID,
+		"status":      string(hubstore.DispatchStatusFailed),
+		"reason":      reason,
+	})
+}
+
+func parseDelegateRequest(prompt string, metadata map[string]any) (delegaterun.Request, bool, error) {
+	adapter, _ := metadata["delegate_adapter"].(string)
+	if strings.TrimSpace(adapter) == "" {
+		return delegaterun.Request{}, false, nil
+	}
+
+	modeRaw, _ := metadata["delegate_mode"].(string)
+	req := delegaterun.Request{
+		Adapter:  adapter,
+		Model:    strings.TrimSpace(stringValue(metadata["delegate_model"])),
+		Task:     prompt,
+		Mode:     delegaterun.Mode(strings.TrimSpace(modeRaw)),
+		Metadata: metadata,
+	}
+	if req.Mode == "" {
+		req.Mode = delegaterun.ModeAdvisory
+	}
+	if cwd, ok := metadata["delegate_cwd"].(string); ok {
+		req.CWD = cwd
+	}
+	req.TimeoutSec = delegaterun.ParseTimeout(metadata["delegate_timeout_sec"])
+
+	if rawContext, ok := metadata["delegate_context"]; ok {
+		payload, err := json.Marshal(rawContext)
+		if err != nil {
+			return delegaterun.Request{}, false, fmt.Errorf("encode delegate_context: %w", err)
+		}
+		if err := json.Unmarshal(payload, &req.Context); err != nil {
+			return delegaterun.Request{}, false, fmt.Errorf("decode delegate_context: %w", err)
+		}
+	}
+
+	req.Normalize()
+	if err := req.Validate(); err != nil {
+		return delegaterun.Request{}, false, err
+	}
+	return req, true, nil
+}
+
+func stringValue(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

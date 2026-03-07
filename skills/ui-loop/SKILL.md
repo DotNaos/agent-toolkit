@@ -5,7 +5,7 @@ Use this skill to map macOS UI and execute UI actions by semantic element IDs.
 ## Build
 
 ```bash
-go build -o bin/ui-loop .
+go build -o bin/ui-loop ./cmd/ui-loop
 ```
 
 ## Requirements

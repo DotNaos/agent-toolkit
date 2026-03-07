@@ -36,6 +36,20 @@ type Approval = {
 };
 
 type EventLogEntry = { id: string; text: string };
+type DelegateAdapter = {
+  id: string;
+  command: string;
+  timeout_sec: number;
+  supports_guarded_execution: boolean;
+  default_model?: string;
+  models?: DelegateModel[];
+};
+
+type DelegateModel = {
+  id: string;
+  label?: string;
+  multiplier?: number;
+};
 
 type ApprovalField = {
   key: string;
@@ -44,6 +58,19 @@ type ApprovalField = {
 };
 
 const ownerId = "owner";
+const fallbackDelegateAdapters: DelegateAdapter[] = [
+  { id: "claude", command: "claude", timeout_sec: 180, supports_guarded_execution: true, default_model: "sonnet", models: [{ id: "sonnet" }, { id: "opus" }, { id: "haiku" }] },
+  { id: "codex", command: "codex", timeout_sec: 180, supports_guarded_execution: true, default_model: "gpt-5.4", models: [{ id: "gpt-5.4" }, { id: "gpt-5-mini" }] },
+  {
+    id: "copilot",
+    command: "copilot",
+    timeout_sec: 180,
+    supports_guarded_execution: true,
+    default_model: "gpt-5.4",
+    models: [{ id: "gpt-5.4" }, { id: "claude-sonnet-4.6", multiplier: 1 }],
+  },
+  { id: "gemini", command: "gemini", timeout_sec: 180, supports_guarded_execution: true, default_model: "gemini-2.5-pro", models: [{ id: "gemini-2.5-pro" }, { id: "gemini-2.5-flash" }] },
+];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -94,8 +121,15 @@ export default function App() {
   const [toId, setToId] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [dispatchAgent, setDispatchAgent] = useState("agent-a");
+  const [delegateAdapters, setDelegateAdapters] = useState<DelegateAdapter[]>(fallbackDelegateAdapters);
+  const [dispatchAdapter, setDispatchAdapter] = useState("gemini");
+  const [dispatchModel, setDispatchModel] = useState("");
   const [dispatchAction, setDispatchAction] = useState("read");
+  const [dispatchMode, setDispatchMode] = useState("advisory");
   const [dispatchPrompt, setDispatchPrompt] = useState("");
+  const [dispatchContext, setDispatchContext] = useState("");
+  const [dispatchFiles, setDispatchFiles] = useState("");
+  const [dispatchTimeoutSec, setDispatchTimeoutSec] = useState("");
   const [isBooting, setIsBooting] = useState(true);
 
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -107,6 +141,10 @@ export default function App() {
   );
 
   const activeApproval = pendingApprovals[0] ?? null;
+  const selectedDelegateAdapter = useMemo(
+    () => delegateAdapters.find((item) => item.id === dispatchAdapter) ?? null,
+    [delegateAdapters, dispatchAdapter]
+  );
   const approvalFields = useMemo(() => parseApprovalFields(activeApproval?.schema_json ?? ""), [activeApproval?.schema_json]);
 
   const [approvalEnumValues, setApprovalEnumValues] = useState<Record<string, string>>({});
@@ -134,6 +172,25 @@ export default function App() {
     const payload = await api<{ approvals: Approval[] }>(`/v1/approvals/pending?conversation_id=${encodeURIComponent(id)}`);
     setPendingApprovals(payload.approvals ?? []);
   }, []);
+
+  const loadDelegateAdapters = useCallback(async () => {
+    const payload = await api<{ adapters: DelegateAdapter[] }>("/v1/delegate/adapters");
+    const items = payload.adapters ?? [];
+    if (items.length > 0) {
+      setDelegateAdapters(items);
+      setDispatchAdapter((prev) => (items.some((item) => item.id === prev) ? prev : items[0].id));
+    }
+  }, []);
+
+  useEffect(() => {
+    const adapter = delegateAdapters.find((item) => item.id === dispatchAdapter);
+    const models = adapter?.models ?? [];
+    if (models.length === 0) {
+      setDispatchModel("");
+      return;
+    }
+    setDispatchModel((prev) => (models.some((model) => model.id === prev) ? prev : adapter?.default_model || models[0].id));
+  }, [delegateAdapters, dispatchAdapter]);
 
   const ensureConversation = useCallback(async () => {
     const existing = await loadConversations();
@@ -214,6 +271,7 @@ export default function App() {
 
     async function boot() {
       try {
+        await loadDelegateAdapters();
         const id = await ensureConversation();
         if (!active || !id) return;
         await loadMessages(id);
@@ -234,7 +292,7 @@ export default function App() {
       active = false;
       eventSourceRef.current?.close();
     };
-  }, [ensureConversation, loadMessages, loadPendingApprovals, openEventStream, logEvent]);
+  }, [ensureConversation, loadDelegateAdapters, loadMessages, loadPendingApprovals, openEventStream, logEvent]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -322,7 +380,18 @@ export default function App() {
 
   async function onDispatch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!conversationId || !dispatchPrompt.trim()) return;
+    if (!conversationId || !dispatchPrompt.trim() || !dispatchAdapter) return;
+
+    const context = [
+      ...(dispatchContext.trim()
+        ? [{ type: "inline", label: "Dispatch context", text: dispatchContext.trim() }]
+        : []),
+      ...dispatchFiles
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((path) => ({ type: "file", path })),
+    ];
 
     try {
       const payload = await api<{ dispatch_id: string; status: string }>(`/v1/agents/${encodeURIComponent(dispatchAgent)}/dispatch`, {
@@ -330,11 +399,21 @@ export default function App() {
         body: JSON.stringify({
           conversation_id: conversationId,
           prompt: dispatchPrompt,
-          metadata: { action: dispatchAction },
+          metadata: {
+            action: dispatchAction,
+            delegate_adapter: dispatchAdapter,
+            delegate_model: dispatchModel || undefined,
+            delegate_mode: dispatchMode,
+            delegate_context: context,
+            delegate_timeout_sec: dispatchTimeoutSec.trim() ? Number(dispatchTimeoutSec) : undefined,
+          },
         }),
       });
       logEvent(`dispatch ${payload.dispatch_id} -> ${payload.status}`);
       setDispatchPrompt("");
+      setDispatchContext("");
+      setDispatchFiles("");
+      setDispatchTimeoutSec("");
     } catch (error) {
       logEvent(`dispatch failed: ${(error as Error).message}`);
     }
@@ -433,6 +512,42 @@ export default function App() {
                   <Input id="dispatch-agent" value={dispatchAgent} onChange={(event) => setDispatchAgent(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
+                  <Label>Delegate Adapter</Label>
+                  <Select value={dispatchAdapter} onValueChange={setDispatchAdapter}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {delegateAdapters.map((adapter) => (
+                        <SelectItem key={adapter.id} value={adapter.id}>
+                          {adapter.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Model</Label>
+                  <Select value={dispatchModel} onValueChange={setDispatchModel} disabled={!selectedDelegateAdapter?.models?.length}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={selectedDelegateAdapter?.default_model || "No model selection"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(selectedDelegateAdapter?.models ?? []).map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.label ? `${model.label} (${model.id})` : model.id}
+                          {typeof model.multiplier === "number" ? ` x${model.multiplier}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {typeof selectedDelegateAdapter?.models?.find((item) => item.id === dispatchModel)?.multiplier === "number" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Copilot multiplier: x{selectedDelegateAdapter.models.find((item) => item.id === dispatchModel)?.multiplier}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1.5">
                   <Label>Action Type</Label>
                   <Select value={dispatchAction} onValueChange={setDispatchAction}>
                     <SelectTrigger>
@@ -446,6 +561,18 @@ export default function App() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
+                  <Label>Delegate Mode</Label>
+                  <Select value={dispatchMode} onValueChange={setDispatchMode}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="advisory">advisory</SelectItem>
+                      <SelectItem value="guarded_execution">guarded_execution</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="dispatch-prompt">Prompt</Label>
                   <Textarea
                     id="dispatch-prompt"
@@ -453,6 +580,36 @@ export default function App() {
                     value={dispatchPrompt}
                     onChange={(event) => setDispatchPrompt(event.target.value)}
                     placeholder="Describe what the agent should do..."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dispatch-context">Inline Context</Label>
+                  <Textarea
+                    id="dispatch-context"
+                    rows={4}
+                    value={dispatchContext}
+                    onChange={(event) => setDispatchContext(event.target.value)}
+                    placeholder="Optional constraints, references, or brief context..."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dispatch-files">Context Files</Label>
+                  <Textarea
+                    id="dispatch-files"
+                    rows={3}
+                    value={dispatchFiles}
+                    onChange={(event) => setDispatchFiles(event.target.value)}
+                    placeholder={"One relative file path per line\nsrc/App.tsx\nREADME.md"}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dispatch-timeout">Timeout Seconds</Label>
+                  <Input
+                    id="dispatch-timeout"
+                    value={dispatchTimeoutSec}
+                    onChange={(event) => setDispatchTimeoutSec(event.target.value)}
+                    placeholder="Optional override"
+                    inputMode="numeric"
                   />
                 </div>
                 <Button type="submit" className="w-full">
