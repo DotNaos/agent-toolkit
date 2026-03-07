@@ -1,4 +1,4 @@
-package cmd
+package uilloopcli
 
 import (
 	"encoding/json"
@@ -125,7 +125,7 @@ func saveState(path string, state *ViewState) error {
 	}
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
+		return fmt.Errorf("failed to write state file %s: %w", path, err)
 	}
 	return nil
 }

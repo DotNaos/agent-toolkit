@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"agent-toolkit/internal/delegaterun"
 	"agent-toolkit/internal/hubstore"
 	"agent-toolkit/internal/hubworker"
 )
@@ -21,13 +22,15 @@ type Server struct {
 	store      *hubstore.Store
 	broker     *Broker
 	worker     *hubworker.Manager
+	delegate   *delegaterun.Runner
 	httpServer *http.Server
 }
 
 type Config struct {
-	ListenAddr string
-	DBPath     string
-	WebDir     string
+	ListenAddr         string
+	DBPath             string
+	WebDir             string
+	DelegateConfigPath string
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -44,7 +47,8 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	broker := NewBroker()
-	worker := hubworker.NewManager(store, broker)
+	delegate := delegaterun.New(cfg.DelegateConfigPath)
+	worker := hubworker.NewManager(store, broker, delegate)
 
 	s := &Server{
 		listenAddr: cfg.ListenAddr,
@@ -52,6 +56,7 @@ func NewServer(cfg Config) (*Server, error) {
 		store:      store,
 		broker:     broker,
 		worker:     worker,
+		delegate:   delegate,
 	}
 
 	mux := http.NewServeMux()
@@ -63,6 +68,7 @@ func NewServer(cfg Config) (*Server, error) {
 	mux.HandleFunc("/v1/approvals/pending", s.handleApprovalPending)
 	mux.HandleFunc("/v1/approvals/", s.handleApprovalRespond)
 	mux.HandleFunc("/v1/agents/", s.handleDispatch)
+	mux.HandleFunc("/v1/delegate/adapters", s.handleDelegateAdapters)
 	mux.HandleFunc("/", s.handleWeb)
 
 	s.httpServer = &http.Server{
@@ -335,6 +341,19 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, DispatchResponse{DispatchID: dispatch.ID, Status: string(dispatch.Status)})
+}
+
+func (s *Server) handleDelegateAdapters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	adapters, err := s.delegate.ListEnabledAdapters()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"adapters": adapters})
 }
 
 func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {

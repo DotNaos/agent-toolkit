@@ -16,9 +16,9 @@ func TestIsRiskyAction_WriteKeyword(t *testing.T) {
 	}
 }
 
-func TestIsRiskyAction_DefaultConservative(t *testing.T) {
+func TestIsRiskyAction_DefaultAdvisorySafe(t *testing.T) {
 	risky, _ := IsRiskyAction("do the thing", nil)
-	if !risky {
-		t.Fatal("expected unclassified action to default to risky")
+	if risky {
+		t.Fatal("expected unclassified advisory action to avoid approval")
 	}
 }

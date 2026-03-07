@@ -16,6 +16,7 @@ Every tool in this monorepo must ship a matching agent skill.
 - Current skills:
     - `skills/ui-loop/SKILL.md`
     - `skills/agent-chat/SKILL.md`
+    - `skills/agent-delegate/SKILL.md`
     - `skills/agent-memory/SKILL.md`
     - `skills/agent-hub/SKILL.md`
     - `skills/repo-branch-protection/SKILL.md`
@@ -43,6 +44,24 @@ Reference:
 - https://skills.sh/
 - `npx skills --help`
 
+## Shell completions
+
+This repo now ships zsh completion support for its main CLIs:
+
+- `agent-chat`
+- `agent-memory`
+- `ui-loop`
+- `agent-hub`
+- `agent-delegate`
+
+Generate and install the completion files into `~/.zsh/completions`:
+
+```bash
+./scripts/install-zsh-completions.sh
+```
+
+The installed completions are bound both to the command names and to the local repo binaries under `./bin/...`.
+
 ## Branch protection setup skill
 
 This repository also ships a reusable skill to standardize branch protection and PR-first workflows across repositories:
@@ -62,7 +81,7 @@ The current Milestone 1/1.1 UI automation tool can be built with any binary name
 Example:
 
 ```bash
-go build -o bin/ui-loop .
+go build -o bin/ui-loop ./cmd/ui-loop
 ./bin/ui-loop map-ui
 ./bin/ui-loop click --id X002
 ./bin/ui-loop type --id X003 --text "Hallo Welt" --submit
@@ -126,6 +145,32 @@ Default behavior:
 - Realtime updates via SSE (`/v1/events/stream`)
 - Risky dispatches (write/edit/delete/deploy/external side effects) create blocking approvals
 - Approval dialog supports enum choices, multi-choice arrays, and free text
+- Delegate dispatches can target `gemini`, `claude`, `copilot`, or `codex` via `agent-delegate`
+
+## Agent delegate (TS implementation + Go wrapper)
+
+`agent-delegate` keeps the actual delegation runtime in TypeScript and exposes the same contract through a thin Go wrapper so the repo still ships a standard CLI entrypoint under `cmd/agent-delegate/`.
+
+Configured adapters can expose allowlisted models and a default model. `copilot` model entries may also include a `multiplier` field so the UI and callers can show GitHub premium-request weighting next to the model choice. These lists are repo-configured allowlists, not exhaustive runtime discovery.
+
+Build the wrapper:
+
+```bash
+go build -o bin/agent-delegate ./cmd/agent-delegate
+```
+
+Run the TypeScript implementation directly:
+
+```bash
+cd tools/agent-delegate
+bun run src/index.ts list-adapters --config ../../agent-delegate.json
+```
+
+Run through the Go wrapper:
+
+```bash
+./bin/agent-delegate list-adapters --config agent-delegate.json
+```
 
 ## Tool isolation policy (must follow)
 
@@ -138,7 +183,7 @@ Tools must be developed in isolation so multiple agents can work in parallel wit
 - A tool owns its own implementation packages under `internal/<tool-name>*`.
 - A tool-specific helper (for example platform code) should live under a tool-specific path (for example `tools/<tool-name>/...`).
 - Existing paths in this repo currently map like this:
-    - UI automation tool: `main.go`, `cmd/`, `tools/axdump/`
+    - UI automation tool: `cmd/ui-loop/`, `internal/uilloopcli/`, `tools/ui-loop/`
     - Agent chat tool: `cmd/agent-chat/`, `internal/chatcli/`, `internal/chatd/`
     - Agent hub tool: `cmd/agent-hub/`, `internal/hubapi/`, `internal/hubstore/`, `internal/hubworker/`, `web/agent-hub/`
 
