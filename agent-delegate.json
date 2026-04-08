@@ -3,6 +3,11 @@
     "timeout_sec": 180,
     "max_timeout_sec": 900
   },
+  "policy": {
+    "default_capabilities": ["read"],
+    "approval_required_for": ["write", "exec", "network", "git"],
+    "allow_heuristic_fallback": true
+  },
   "adapters": {
     "gemini": {
       "enabled": true,
@@ -10,8 +15,10 @@
       "args": [],
       "timeout_sec": 180,
       "supports_guarded_execution": true,
-      "default_model": "gemini-2.5-pro",
+      "supported_capabilities": ["read", "write", "exec", "network", "git"],
+      "default_model": "gemini-3.1-pro-preview",
       "models": [
+        { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "aliases": ["gemini-3.1-pro"] },
         { "id": "gemini-2.5-pro" },
         { "id": "gemini-2.5-flash" }
       ]
@@ -22,6 +29,7 @@
       "args": [],
       "timeout_sec": 180,
       "supports_guarded_execution": true,
+      "supported_capabilities": ["read", "write", "exec", "network", "git"],
       "default_model": "sonnet",
       "models": [
         { "id": "sonnet" },
@@ -35,6 +43,7 @@
       "args": [],
       "timeout_sec": 180,
       "supports_guarded_execution": true,
+      "supported_capabilities": ["read", "write", "exec", "network", "git"],
       "default_model": "gpt-5.4",
       "models": [
         { "id": "claude-sonnet-4.6", "multiplier": 1 },
@@ -63,6 +72,7 @@
       "args": [],
       "timeout_sec": 180,
       "supports_guarded_execution": true,
+      "supported_capabilities": ["read", "write", "exec", "network", "git"],
       "default_model": "gpt-5.4",
       "models": [
         { "id": "gpt-5.4" },

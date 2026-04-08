@@ -54,3 +54,56 @@ func AssessRisk(task string, metadata map[string]any, mode Mode) Risk {
 
 	return Risk{ApprovalRequired: false, Reason: "advisory mode defaults to no approval"}
 }
+
+func AssessRequestRisk(req Request, policy *PolicyConfig) Risk {
+	req.Normalize()
+
+	defaultCapabilities := []string{"read"}
+	approvalRequiredFor := []string{"write", "exec", "network", "git"}
+	allowHeuristicFallback := true
+	if policy != nil {
+		if len(policy.DefaultCapabilities) > 0 {
+			defaultCapabilities = normalizeCapabilities(policy.DefaultCapabilities)
+		}
+		if len(policy.ApprovalRequiredFor) > 0 {
+			approvalRequiredFor = normalizeCapabilities(policy.ApprovalRequiredFor)
+		}
+		allowHeuristicFallback = policy.AllowHeuristicFallback
+	}
+
+	requested := append([]string(nil), req.Capabilities...)
+	if len(requested) == 0 {
+		requested = append(requested, defaultCapabilities...)
+	}
+	if req.Mode == ModeGuardedExecution {
+		for _, capability := range []string{"read", "write", "exec", "git"} {
+			if !containsString(requested, capability) {
+				requested = append(requested, capability)
+			}
+		}
+	}
+
+	for _, capability := range requested {
+		if containsString(approvalRequiredFor, capability) {
+			return Risk{ApprovalRequired: true, Reason: "requested capabilities require approval: " + capability}
+		}
+	}
+
+	if allowHeuristicFallback {
+		risk := AssessRisk(req.Task, req.Metadata, req.Mode)
+		if risk.ApprovalRequired {
+			return Risk{ApprovalRequired: true, Reason: "heuristic fallback: " + risk.Reason}
+		}
+	}
+
+	return Risk{ApprovalRequired: false, Reason: "capabilities allowed without approval: " + strings.Join(requested, ", ")}
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}

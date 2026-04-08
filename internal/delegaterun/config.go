@@ -15,9 +15,16 @@ type DefaultsConfig struct {
 	MaxTimeoutSec int `json:"max_timeout_sec"`
 }
 
+type PolicyConfig struct {
+	DefaultCapabilities    []string `json:"default_capabilities"`
+	ApprovalRequiredFor    []string `json:"approval_required_for"`
+	AllowHeuristicFallback bool     `json:"allow_heuristic_fallback"`
+}
+
 type ModelConfig struct {
 	ID         string   `json:"id"`
 	Label      string   `json:"label,omitempty"`
+	Aliases    []string `json:"aliases,omitempty"`
 	Multiplier *float64 `json:"multiplier,omitempty"`
 }
 
@@ -29,10 +36,12 @@ type AdapterConfig struct {
 	SupportsGuardedExecution bool          `json:"supports_guarded_execution"`
 	DefaultModel             string        `json:"default_model,omitempty"`
 	Models                   []ModelConfig `json:"models,omitempty"`
+	SupportedCapabilities    []string      `json:"supported_capabilities,omitempty"`
 }
 
 type Config struct {
 	Defaults DefaultsConfig           `json:"defaults"`
+	Policy   PolicyConfig             `json:"policy"`
 	Adapters map[string]AdapterConfig `json:"adapters"`
 }
 
@@ -44,6 +53,7 @@ type AdapterInfo struct {
 	SupportsGuardedExecution bool          `json:"supports_guarded_execution"`
 	DefaultModel             string        `json:"default_model,omitempty"`
 	Models                   []ModelConfig `json:"models,omitempty"`
+	SupportedCapabilities    []string      `json:"supported_capabilities,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -85,6 +95,25 @@ func (c *Config) applyDefaults() {
 	if c.Adapters == nil {
 		c.Adapters = map[string]AdapterConfig{}
 	}
+	if len(c.Policy.DefaultCapabilities) == 0 {
+		c.Policy.DefaultCapabilities = []string{"read"}
+	}
+	if len(c.Policy.ApprovalRequiredFor) == 0 {
+		c.Policy.ApprovalRequiredFor = []string{"write", "exec", "network", "git"}
+	}
+	if !c.Policy.AllowHeuristicFallback {
+		// false is a meaningful value only when explicitly set later during decode.
+		// Default to true here for backwards compatible config behavior.
+		c.Policy.AllowHeuristicFallback = true
+	}
+	for id, adapter := range c.Adapters {
+		if len(adapter.SupportedCapabilities) == 0 {
+			adapter.SupportedCapabilities = []string{"read", "write", "exec", "network", "git"}
+		} else {
+			adapter.SupportedCapabilities = normalizeCapabilities(adapter.SupportedCapabilities)
+		}
+		c.Adapters[id] = adapter
+	}
 }
 
 func (c Config) Validate() error {
@@ -105,9 +134,22 @@ func (c Config) Validate() error {
 		if adapter.TimeoutSec < 0 {
 			return fmt.Errorf("adapter %q has invalid timeout", id)
 		}
+		if len(adapter.SupportedCapabilities) == 0 {
+			adapter.SupportedCapabilities = []string{"read", "write", "exec", "network", "git"}
+		}
+		for _, capability := range normalizeStringList(adapter.SupportedCapabilities) {
+			if _, ok := allowedCapabilities[capability]; !ok {
+				return fmt.Errorf("adapter %q has unsupported capability %q", id, capability)
+			}
+		}
 		for _, model := range adapter.Models {
 			if strings.TrimSpace(model.ID) == "" {
 				return fmt.Errorf("adapter %q contains model with empty id", id)
+			}
+			for _, alias := range normalizeStringList(model.Aliases) {
+				if alias == strings.TrimSpace(strings.ToLower(model.ID)) {
+					return fmt.Errorf("adapter %q model %q alias duplicates id", id, model.ID)
+				}
 			}
 		}
 	}
@@ -134,9 +176,18 @@ func (c Config) EnabledAdapters() []AdapterInfo {
 			SupportsGuardedExecution: adapter.SupportsGuardedExecution,
 			DefaultModel:             adapter.DefaultModel,
 			Models:                   append([]ModelConfig(nil), adapter.Models...),
+			SupportedCapabilities:    append([]string(nil), normalizeCapabilities(adapter.SupportedCapabilities)...),
 		})
 	}
 	return items
+}
+
+func normalizeCapabilities(items []string) []string {
+	normalized := normalizeStringList(items)
+	if len(normalized) == 0 {
+		return []string{"read", "write", "exec", "network", "git"}
+	}
+	return normalized
 }
 
 func resolvedCommand(adapterID string, adapter AdapterConfig) string {

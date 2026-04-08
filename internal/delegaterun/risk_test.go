@@ -25,3 +25,17 @@ func TestAssessRiskAllowsLocalWriteActionMetadata(t *testing.T) {
 		t.Fatalf("expected local write metadata to avoid approval, got %+v", risk)
 	}
 }
+
+func TestAssessRequestRiskRequiresApprovalForWriteCapability(t *testing.T) {
+	risk := AssessRequestRisk(Request{Task: "Update note.txt", Capabilities: []string{"write"}}, nil)
+	if !risk.ApprovalRequired {
+		t.Fatalf("expected write capability to require approval, got %+v", risk)
+	}
+}
+
+func TestAssessRequestRiskDefaultsToReadCapability(t *testing.T) {
+	risk := AssessRequestRisk(Request{Task: "Summarize the repo"}, nil)
+	if risk.ApprovalRequired {
+		t.Fatalf("expected default read capability to avoid approval, got %+v", risk)
+	}
+}

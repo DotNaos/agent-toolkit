@@ -15,11 +15,14 @@ Every tool in this monorepo must ship a matching agent skill.
 - Skill files live under `skills/<tool-name>/SKILL.md`.
 - Current skills:
     - `skills/ui-loop/SKILL.md`
+    - `skills/ui-clarity-loop/SKILL.md`
     - `skills/agent-chat/SKILL.md`
     - `skills/agent-delegate/SKILL.md`
     - `skills/agent-memory/SKILL.md`
     - `skills/agent-hub/SKILL.md`
     - `skills/repo-branch-protection/SKILL.md`
+    - `skills/readme-tutorial-flow/SKILL.md`
+    - `skills/evidence-driven-validation/SKILL.md`
 
 Install all skills from this repo (global, non-interactive):
 

@@ -21,6 +21,21 @@ const (
 	StatusTimedOut  Status = "timed_out"
 )
 
+type ResponseFormatType string
+
+const (
+	ResponseFormatText       ResponseFormatType = "text"
+	ResponseFormatJSONSchema ResponseFormatType = "json_schema"
+)
+
+var allowedCapabilities = map[string]struct{}{
+	"read":    {},
+	"write":   {},
+	"exec":    {},
+	"network": {},
+	"git":     {},
+}
+
 type ContextItem struct {
 	Type      string `json:"type,omitempty"`
 	Label     string `json:"label,omitempty"`
@@ -31,19 +46,40 @@ type ContextItem struct {
 }
 
 type Request struct {
-	Adapter    string         `json:"adapter"`
-	Model      string         `json:"model,omitempty"`
-	Task       string         `json:"task"`
-	Mode       Mode           `json:"mode"`
-	CWD        string         `json:"cwd,omitempty"`
-	Context    []ContextItem  `json:"context,omitempty"`
-	TimeoutSec int            `json:"timeout_sec,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
+	Adapter        string          `json:"adapter"`
+	Model          string          `json:"model,omitempty"`
+	Task           string          `json:"task"`
+	Mode           Mode            `json:"mode"`
+	CWD            string          `json:"cwd,omitempty"`
+	Context        []ContextItem   `json:"context,omitempty"`
+	TimeoutSec     int             `json:"timeout_sec,omitempty"`
+	Metadata       map[string]any  `json:"metadata,omitempty"`
+	Capabilities   []string        `json:"capabilities,omitempty"`
+	AllowedPaths   []string        `json:"allowed_paths,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 type Risk struct {
 	ApprovalRequired bool   `json:"approval_required"`
 	Reason           string `json:"reason,omitempty"`
+}
+
+type PolicyDecision struct {
+	CapabilitiesRequested []string `json:"capabilities_requested,omitempty"`
+	CapabilitiesGranted   []string `json:"capabilities_granted,omitempty"`
+	ApprovalRequired      bool     `json:"approval_required"`
+	Reason                string   `json:"reason,omitempty"`
+}
+
+type ChangeSet struct {
+	Created []string `json:"created,omitempty"`
+	Updated []string `json:"updated,omitempty"`
+	Deleted []string `json:"deleted,omitempty"`
+}
+
+type ResponseFormat struct {
+	Type   ResponseFormatType `json:"type,omitempty"`
+	Schema map[string]any     `json:"schema,omitempty"`
 }
 
 type Artifact struct {
@@ -53,16 +89,19 @@ type Artifact struct {
 }
 
 type Result struct {
-	Status     Status     `json:"status"`
-	Adapter    string     `json:"adapter"`
-	Mode       Mode       `json:"mode"`
-	FinalText  string     `json:"final_text,omitempty"`
-	Stdout     string     `json:"stdout,omitempty"`
-	Stderr     string     `json:"stderr,omitempty"`
-	ExitCode   int        `json:"exit_code,omitempty"`
-	DurationMS int64      `json:"duration_ms"`
-	Artifacts  []Artifact `json:"artifacts,omitempty"`
-	Risk       Risk       `json:"risk"`
+	Status           Status          `json:"status"`
+	Adapter          string          `json:"adapter"`
+	Mode             Mode            `json:"mode"`
+	FinalText        string          `json:"final_text,omitempty"`
+	Stdout           string          `json:"stdout,omitempty"`
+	Stderr           string          `json:"stderr,omitempty"`
+	ExitCode         int             `json:"exit_code,omitempty"`
+	DurationMS       int64           `json:"duration_ms"`
+	Artifacts        []Artifact      `json:"artifacts,omitempty"`
+	StructuredOutput any             `json:"structured_output,omitempty"`
+	Changes          *ChangeSet      `json:"changes,omitempty"`
+	Policy           *PolicyDecision `json:"policy,omitempty"`
+	Risk             Risk            `json:"risk"`
 }
 
 type RunOptions struct {
@@ -78,6 +117,17 @@ func (r *Request) Normalize() {
 	}
 	if r.Metadata == nil {
 		r.Metadata = map[string]any{}
+	}
+	r.Capabilities = normalizeStringList(r.Capabilities)
+	r.AllowedPaths = normalizeStringList(r.AllowedPaths)
+	if r.ResponseFormat == nil {
+		r.ResponseFormat = &ResponseFormat{Type: ResponseFormatText}
+	}
+	if r.ResponseFormat.Type == "" {
+		r.ResponseFormat.Type = ResponseFormatText
+	}
+	if r.ResponseFormat.Schema == nil {
+		r.ResponseFormat.Schema = map[string]any{}
 	}
 }
 
@@ -95,5 +145,34 @@ func (r Request) Validate() error {
 	default:
 		return fmt.Errorf("invalid mode %q", r.Mode)
 	}
+	for _, capability := range r.Capabilities {
+		if _, ok := allowedCapabilities[capability]; !ok {
+			return fmt.Errorf("unsupported capability %q", capability)
+		}
+	}
+	if r.ResponseFormat != nil {
+		switch r.ResponseFormat.Type {
+		case ResponseFormatText, ResponseFormatJSONSchema:
+		default:
+			return fmt.Errorf("invalid response_format type %q", r.ResponseFormat.Type)
+		}
+	}
 	return nil
+}
+
+func normalizeStringList(items []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		normalized := strings.TrimSpace(strings.ToLower(item))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
 }

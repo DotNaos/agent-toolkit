@@ -72,7 +72,7 @@ func (m *Manager) DispatchAgent(conversationID, agentID, prompt string, metadata
 		return nil, err
 	}
 
-	risk := delegaterun.AssessRisk(prompt, metadata, delegateReq.Mode)
+	risk := delegaterun.AssessRequestRisk(delegateReq, nil)
 	if hasDelegate {
 		if risk.ApprovalRequired {
 			approval, err := m.createApproval(conversationID, agentID, dispatch.ID, delegateReq, risk)
@@ -143,7 +143,7 @@ func (m *Manager) createApproval(conversationID, agentID, dispatchID string, del
 		ConversationID: conversationID,
 		AgentID:        agentID,
 		Title:          "Approval required for delegated action",
-		Description:    fmt.Sprintf("Delegated adapter %s blocked: %s", delegateReq.Adapter, risk.Reason),
+		Description:    describeDelegateApproval(delegateReq, risk),
 		SchemaJSON:     string(schemaJSON),
 		RiskLevel:      "high",
 		ExpiresAt:      time.Now().UTC().Add(m.approvalTimeout),
@@ -301,9 +301,15 @@ func (m *Manager) runDelegateDispatch(dispatchID, conversationID, agentID string
 
 	switch result.Status {
 	case delegaterun.StatusCompleted:
-		body := result.FinalText
+		body := structuredSummary(result.StructuredOutput)
+		if strings.TrimSpace(body) == "" {
+			body = result.FinalText
+		}
 		if strings.TrimSpace(body) == "" {
 			body = "Delegated task completed with no final text."
+		}
+		if result.Changes != nil {
+			body = fmt.Sprintf("%s\n\nChanges: created=%d updated=%d deleted=%d.", body, len(result.Changes.Created), len(result.Changes.Updated), len(result.Changes.Deleted))
 		}
 		if len(result.Artifacts) > 0 {
 			body = fmt.Sprintf("%s\n\nArtifacts: %d file(s).", body, len(result.Artifacts))
@@ -401,6 +407,19 @@ func parseDelegateRequest(prompt string, metadata map[string]any) (delegaterun.R
 			return delegaterun.Request{}, false, fmt.Errorf("decode delegate_context: %w", err)
 		}
 	}
+	req.Capabilities = stringListValue(metadata["delegate_capabilities"])
+	req.AllowedPaths = stringListValue(metadata["delegate_allowed_paths"])
+	if rawResponseFormat, ok := metadata["delegate_response_format"]; ok {
+		payload, err := json.Marshal(rawResponseFormat)
+		if err != nil {
+			return delegaterun.Request{}, false, fmt.Errorf("encode delegate_response_format: %w", err)
+		}
+		var responseFormat delegaterun.ResponseFormat
+		if err := json.Unmarshal(payload, &responseFormat); err != nil {
+			return delegaterun.Request{}, false, fmt.Errorf("decode delegate_response_format: %w", err)
+		}
+		req.ResponseFormat = &responseFormat
+	}
 
 	req.Normalize()
 	if err := req.Validate(); err != nil {
@@ -412,6 +431,50 @@ func parseDelegateRequest(prompt string, metadata map[string]any) (delegaterun.R
 func stringValue(v any) string {
 	if s, ok := v.(string); ok {
 		return s
+	}
+	return ""
+}
+
+func stringListValue(v any) []string {
+	switch value := v.(type) {
+	case []string:
+		return append([]string(nil), value...)
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if s := stringValue(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func describeDelegateApproval(req delegaterun.Request, risk delegaterun.Risk) string {
+	scope := req.CWD
+	if strings.TrimSpace(scope) == "" {
+		scope = "."
+	}
+	paths := "(all allowed paths)"
+	if len(req.AllowedPaths) > 0 {
+		paths = strings.Join(req.AllowedPaths, ", ")
+	}
+	capabilities := "read"
+	if len(req.Capabilities) > 0 {
+		capabilities = strings.Join(req.Capabilities, ", ")
+	}
+	return fmt.Sprintf("Delegated adapter %s requested capabilities [%s] in %s with scope [%s]. %s", req.Adapter, capabilities, scope, paths, risk.Reason)
+}
+
+func structuredSummary(value any) string {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if summary, ok := object["summary"].(string); ok {
+		return strings.TrimSpace(summary)
 	}
 	return ""
 }
