@@ -71,6 +71,12 @@ When the user wants the full workflow, follow these steps:
 9. The user saves the Icon Composer project under the project `assets/` folder and exports the final icon there.
 10. Wire the finished icon into the app.
 
+If the user wants a faster Icon Composer setup:
+
+11. Use the bundled template at `assets/icon-composer/icon.json.template`.
+12. Use the bundled script at `scripts/create_icon_composer_project.py` to generate a clean `.icon` project from the cleaned PNG.
+13. Prefer this script over hand-building the `.icon` bundle when the user wants speed and repeatability.
+
 ## Workflow Rules
 
 - do not create a helper script in the repo for this workflow unless the user explicitly asks for one
@@ -78,6 +84,31 @@ When the user wants the full workflow, follow these steps:
 - when opening Icon Composer, also open Finder in the folder that contains the cleaned export so the user can drag it in
 - whenever the user needs to drag a file into another app, open the relevant Finder folder too
 - after the Icon Composer export, rename random PNG filenames in `assets/` to a clean stable name before wiring the icon into the app
+- when bootstrapping Icon Composer from a cleaned PNG, create the `.icon` bundle outside the repo only if the user asks; otherwise prefer the project `assets/` folder
+- after generating the `.icon` bundle, open both the `.icon` project and its Finder location so the user can export immediately
+
+## Bundled Icon Composer Bootstrap
+
+Use the bundled script when the user has already cleaned the PNG and wants to jump straight into Icon Composer.
+
+Command:
+
+```bash
+python3 /Users/oli/projects/agent-toolkit/skills/macos-app-icon-prompt/scripts/create_icon_composer_project.py \
+  --source ~/Downloads/cleaned-icon.png \
+  --output /absolute/path/to/project/assets/MyApp.icon \
+  --name "My App" \
+  --open
+```
+
+Behavior:
+
+- copies the cleaned PNG into the `.icon` bundle with a stable filename
+- writes `icon.json` from the bundled template
+- opens the generated `.icon` project in Icon Composer
+- reveals the project in Finder
+
+Use `--force` only when replacing an existing `.icon` bundle intentionally.
 
 ## Strong Default Prompt Pattern
 

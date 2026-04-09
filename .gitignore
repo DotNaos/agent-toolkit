@@ -7,3 +7,5 @@ bin/
 # web ui dependencies/build
 web/agent-hub/node_modules/
 web/agent-hub/dist/
+
+**/__pycache__/
