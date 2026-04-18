@@ -1,0 +1,71 @@
+{
+  "title": "Roadmap Grid Example",
+  "columns": 8,
+  "cell_width": 5,
+  "cell_height": 3,
+  "rows": [
+    {
+      "lane": "center",
+      "cells": [
+        { "col": 0, "label": "A", "edges": ["s"] },
+        { "col": 1, "label": "B", "edges": ["s"] },
+        { "col": 2, "label": "C" },
+        { "col": 3, "label": "D" },
+        { "col": 4, "label": "E", "edges": ["s"] },
+        { "col": 5, "label": "F", "edges": ["s"] },
+        { "col": 6, "label": "G", "edges": ["s"] },
+        { "col": 7, "label": "H" }
+      ]
+    },
+    {
+      "lane": "center",
+      "cells": [
+        { "col": 0, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 1, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 2, "kind": "blank" },
+        { "col": 3, "kind": "blank" },
+        { "col": 4, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 5, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 6, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 7, "kind": "blank" }
+      ]
+    },
+    {
+      "lane": "center",
+      "cells": [
+        { "col": 0, "kind": "pipe", "interior": "turn-ne", "edges": ["n"] },
+        { "col": 1, "kind": "pipe", "interior": "tee-n", "edges": ["n"] },
+        { "col": 2, "kind": "pipe", "interior": "turn-sw", "edges": ["s"] },
+        { "col": 3, "kind": "blank" },
+        { "col": 4, "kind": "pipe", "interior": "turn-ne", "edges": ["n"] },
+        { "col": 5, "kind": "pipe", "interior": "tee-n", "edges": ["n", "s"] },
+        { "col": 6, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 7, "kind": "blank" }
+      ]
+    },
+    {
+      "lane": "center",
+      "cells": [
+        { "col": 0, "kind": "blank" },
+        { "col": 1, "kind": "blank" },
+        { "col": 2, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 3, "kind": "blank" },
+        { "col": 4, "kind": "blank" },
+        { "col": 5, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 6, "kind": "pipe", "interior": "vertical", "edges": ["n", "s"] },
+        { "col": 7, "kind": "blank" }
+      ]
+    },
+    {
+      "lane": "center",
+      "cells": [
+        { "col": 0, "kind": "blank" },
+        { "col": 1, "span": 3, "label": "I", "edges": ["n"] },
+        { "col": 4, "kind": "blank" },
+        { "col": 5, "label": "J", "edges": ["n"] },
+        { "col": 6, "label": "K", "edges": ["n"] },
+        { "col": 7, "kind": "blank" }
+      ]
+    }
+  ]
+}
