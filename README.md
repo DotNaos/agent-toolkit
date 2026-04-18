@@ -16,6 +16,7 @@ Every tool in this monorepo must ship a matching agent skill.
 - Current skills:
     - `skills/ui-loop/SKILL.md`
     - `skills/ui-clarity-loop/SKILL.md`
+    - `skills/requirements-ui-redesign/SKILL.md`
     - `skills/agent-chat/SKILL.md`
     - `skills/agent-delegate/SKILL.md`
     - `skills/agent-memory/SKILL.md`
