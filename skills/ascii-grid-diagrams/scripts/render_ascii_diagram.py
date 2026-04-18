@@ -5,6 +5,7 @@ import argparse
 import json
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -28,6 +29,7 @@ EDGE_OPPOSITE = {"n": "s", "e": "w", "s": "n", "w": "e"}
 VALID_EDGES = set(EDGE_OPPOSITE)
 VALID_KINDS = {"content", "pipe", "blank"}
 VALID_LANES = {"upper", "center", "lower"}
+DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parent.parent / ".artifacts"
 
 
 @dataclass(frozen=True)
@@ -60,10 +62,34 @@ class Diagram:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render validated ASCII grid diagrams.")
-    parser.add_argument("--spec", type=Path, required=True, help="Path to the JSON spec.")
+    parser.add_argument("--spec", type=Path, help="Path to the grid JSON spec.")
+    parser.add_argument("--text", help="Raw ASCII text input.")
+    parser.add_argument("--text-file", type=Path, help="Path to a text file containing ASCII input.")
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="When using --text-file, overwrite that file with formatted ASCII and write the PNG next to it by default.",
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACT_DIR,
+        help="Directory for timestamped generated files.",
+    )
+    parser.add_argument(
+        "--artifact-stem",
+        default="diagram",
+        help="Base name for timestamped generated files.",
+    )
     parser.add_argument("--format-spec-out", type=Path, help="Write a canonical formatted spec to this file.")
     parser.add_argument("--ascii-out", type=Path, help="Write ASCII output to this file.")
     parser.add_argument("--png-out", type=Path, help="Write PNG preview to this file.")
+    parser.add_argument(
+        "--png-style",
+        choices=("standard", "pixel"),
+        default="standard",
+        help="PNG render style.",
+    )
     parser.add_argument("--png-scale", type=int, default=3, help="PNG render scale factor, default 3.")
     parser.add_argument("--stdout", action="store_true", help="Print ASCII output to stdout.")
     return parser.parse_args()
@@ -137,6 +163,71 @@ def load_diagram(path: Path) -> Diagram:
     )
     validate_boundaries(diagram)
     return diagram
+
+
+def format_ascii_text(text: str) -> str:
+    lines = text.replace("\t", "    ").splitlines()
+
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    if not lines:
+        return ""
+
+    title, body_lines = split_title_and_body("\n".join(lines))
+    body_lines = body_lines or [""]
+    width = max(len(line) for line in body_lines)
+    formatted_body = [line.ljust(width) for line in body_lines]
+
+    if title:
+        return f"{title}\n\n" + "\n".join(formatted_body)
+
+    return "\n".join(formatted_body)
+
+
+def load_ascii_input(args: argparse.Namespace) -> str:
+    has_spec = args.spec is not None
+    has_text = args.text is not None
+    has_text_file = args.text_file is not None
+    chosen = sum((has_spec, has_text, has_text_file))
+
+    if chosen != 1:
+        raise ValueError("provide exactly one of --spec, --text, or --text-file")
+
+    if has_spec:
+        diagram = load_diagram(args.spec)
+        return render_ascii(diagram)
+
+    if has_text:
+        return format_ascii_text(args.text)
+
+    return format_ascii_text(args.text_file.read_text())
+
+
+def timestamp_string() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def default_output_path(args: argparse.Namespace, suffix: str) -> Path:
+    safe_stem = "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in args.artifact_stem).strip("-")
+    if not safe_stem:
+        safe_stem = "diagram"
+    return args.artifact_dir / f"{safe_stem}-{timestamp_string()}{suffix}"
+
+
+def derive_output_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    if args.in_place:
+        if not args.text_file:
+            raise ValueError("--in-place only works together with --text-file.")
+        ascii_out = args.ascii_out or args.text_file
+        png_out = args.png_out or args.text_file.with_suffix(".png")
+        return ascii_out, png_out
+
+    ascii_out = args.ascii_out or default_output_path(args, ".txt")
+    png_out = args.png_out or default_output_path(args, ".png")
+    return ascii_out, png_out
 
 
 def validate_row(columns: int, row_index: int, cells: list[Cell]) -> None:
@@ -274,8 +365,29 @@ def resolve_lane_y(y0: int, y1: int, lane: str) -> int:
     return (y0 + y1) // 2
 
 
+def edge_marker(cell: Cell, edge: str) -> str | None:
+    if cell.kind != "content":
+        return None
+
+    if edge in {"n", "s"}:
+        return "v"
+
+    return None
+
+
+def edge_connector(cell: Cell, edge: str) -> str:
+    if edge in {"n", "s"} and cell.kind == "content":
+        return "#"
+    if edge in {"n", "s"}:
+        return "|"
+    if edge in {"w", "e"}:
+        return "-"
+    raise ValueError(f"unsupported edge {edge!r}")
+
+
 def draw_cell(canvas: list[list[str]], diagram: Diagram, cell: Cell, lane: str) -> None:
     x0, y0, x1, y1 = cell.bounds(diagram.cell_width, diagram.cell_height)
+    lane_y = resolve_lane_y(y0, y1, lane)
 
     put(canvas, x0, y0, "+")
     put(canvas, x1, y0, "+")
@@ -283,35 +395,57 @@ def draw_cell(canvas: list[list[str]], diagram: Diagram, cell: Cell, lane: str) 
     put(canvas, x1, y1, "+")
 
     for x in range(x0 + 1, x1):
-        put(canvas, x, y0, "-")
-        put(canvas, x, y1, "-")
+        if canvas[y0][x] != "#":
+            put(canvas, x, y0, "-")
+        if canvas[y1][x] != "#":
+            put(canvas, x, y1, "-")
 
     for y in range(y0 + 1, y1):
-        put(canvas, x0, y, "|")
-        put(canvas, x1, y, "|")
+        if not ("w" in cell.edges and y == lane_y):
+            put(canvas, x0, y, "|")
+        if not ("e" in cell.edges and y == lane_y):
+            put(canvas, x1, y, "|")
 
-    lane_y = resolve_lane_y(y0, y1, lane)
-    draw_edge_pipes(canvas, x0, y0, x1, y1, cell.edges, lane_y)
+    draw_edge_pipes(canvas, cell, x0, y0, x1, y1, cell.edges, lane_y)
     draw_interior(canvas, x0, y0, x1, y1, cell.interior, lane_y)
+
+    center_x = (x0 + x1) // 2
+    for edge in ("n", "s", "w", "e"):
+        if edge not in cell.edges:
+            continue
+        marker = edge_marker(cell, edge)
+        if not marker:
+            continue
+
+        if edge == "n":
+            put(canvas, center_x, y0 + 1, marker, override=True)
+        elif edge == "s":
+            put(canvas, center_x, y1 - 1, marker, override=True)
 
     if cell.label:
         draw_centered_text(canvas, x0, y0, x1, y1, cell.label)
 
 
 def draw_edge_pipes(
-    canvas: list[list[str]], x0: int, y0: int, x1: int, y1: int, edges: Iterable[str], lane_y: int
+    canvas: list[list[str]], cell: Cell, x0: int, y0: int, x1: int, y1: int, edges: Iterable[str], lane_y: int
 ) -> None:
     center_x = (x0 + x1) // 2
 
     for edge in edges:
         if edge == "n":
-            put(canvas, center_x, y0, "|", override=True)
+            connector = edge_connector(cell, edge)
+            if connector == "|" and canvas[y0][center_x] == "#":
+                continue
+            put(canvas, center_x, y0, connector, override=True)
         elif edge == "s":
-            put(canvas, center_x, y1, "|", override=True)
+            connector = edge_connector(cell, edge)
+            if connector == "|" and canvas[y1][center_x] == "#":
+                continue
+            put(canvas, center_x, y1, connector, override=True)
         elif edge == "w":
-            put(canvas, x0, lane_y, "-", override=True)
+            put(canvas, x0, lane_y, edge_connector(cell, edge), override=True)
         elif edge == "e":
-            put(canvas, x1, lane_y, "-", override=True)
+            put(canvas, x1, lane_y, edge_connector(cell, edge), override=True)
 
 
 def draw_interior(
@@ -444,7 +578,7 @@ def split_title_and_body(text: str) -> tuple[str, list[str]]:
     return "", lines
 
 
-def render_png(text: str, output_path: Path, scale: int) -> None:
+def render_png_standard(text: str, output_path: Path, scale: int) -> None:
     try:
         from PIL import Image, ImageDraw
     except ImportError as exc:  # pragma: no cover
@@ -530,25 +664,320 @@ def render_png(text: str, output_path: Path, scale: int) -> None:
     image.save(output_path)
 
 
+def draw_pixel_arrow_down(draw, x: int, y: int, tile: int, color: str) -> None:
+    shaft_width = max(2, tile // 6)
+    shaft_top = y + tile // 5
+    shaft_bottom = y + (tile * 3) // 5
+    center_x = x + tile // 2
+    draw.rectangle(
+        [
+            (center_x - shaft_width // 2, shaft_top),
+            (center_x + shaft_width // 2, shaft_bottom),
+        ],
+        fill=color,
+    )
+    head_half = max(4, tile // 4)
+    head_top = shaft_bottom - max(1, tile // 12)
+    head_tip = y + tile - tile // 6
+    draw.polygon(
+        [
+            (center_x - head_half, head_top),
+            (center_x + head_half, head_top),
+            (center_x, head_tip),
+        ],
+        fill=color,
+    )
+
+
+def pixel_potential_directions(character: str) -> set[str]:
+    if character == "-":
+        return {"w", "e"}
+    if character == "|":
+        return {"n", "s"}
+    if character in {"+", "#"}:
+        return {"n", "e", "s", "w"}
+    return set()
+
+
+def pixel_neighbor(lines: list[str], row: int, col: int, direction: str) -> str:
+    offsets = {
+        "n": (-1, 0),
+        "e": (0, 1),
+        "s": (1, 0),
+        "w": (0, -1),
+    }
+    row_offset, col_offset = offsets[direction]
+    new_row = row + row_offset
+    new_col = col + col_offset
+
+    if new_row < 0 or new_row >= len(lines):
+        return " "
+    if new_col < 0 or new_col >= len(lines[new_row]):
+        return " "
+    return lines[new_row][new_col]
+
+
+def pixel_resolved_directions(lines: list[str], row: int, col: int) -> set[str]:
+    character = lines[row][col]
+    potential = pixel_potential_directions(character)
+    if not potential:
+        return set()
+
+    opposites = {"n": "s", "e": "w", "s": "n", "w": "e"}
+    resolved: set[str] = set()
+
+    for direction in potential:
+        neighbor = pixel_neighbor(lines, row, col, direction)
+        if opposites[direction] in pixel_potential_directions(neighbor):
+            resolved.add(direction)
+
+    return resolved
+
+
+def infer_lattice_columns(lines: list[str]) -> set[int]:
+    if not lines:
+        return set()
+
+    width = max(len(line) for line in lines)
+    columns: set[int] = set()
+    threshold = max(3, len(lines) // 2)
+
+    for col in range(width):
+        score = 0
+        for row in range(len(lines)):
+            if col >= len(lines[row]):
+                continue
+            if lines[row][col] in {"|", "+"}:
+                score += 1
+        if score >= threshold:
+            columns.add(col)
+
+    return columns
+
+
+def infer_lattice_rows(lines: list[str], lattice_columns: set[int]) -> set[int]:
+    rows: set[int] = set()
+    if not lines or not lattice_columns:
+        return rows
+
+    threshold = max(3, len(lattice_columns) // 2)
+
+    for row_index, line in enumerate(lines):
+        boundary_hits = 0
+        for col in lattice_columns:
+            if col >= len(line):
+                continue
+            if line[col] in {"+", "#"}:
+                boundary_hits += 1
+        if boundary_hits >= threshold:
+            rows.add(row_index)
+
+    return rows
+
+
+def trace_pipe_cells(lines: list[str]) -> set[tuple[int, int]]:
+    pipe_cells: set[tuple[int, int]] = set()
+    stack: list[tuple[int, int]] = []
+    opposites = {"n": "s", "e": "w", "s": "n", "w": "e"}
+    offsets = {
+        "n": (-1, 0),
+        "e": (0, 1),
+        "s": (1, 0),
+        "w": (0, -1),
+    }
+    lattice_columns = infer_lattice_columns(lines)
+    lattice_rows = infer_lattice_rows(lines, lattice_columns)
+
+    for row_index, line in enumerate(lines):
+        for col_index, character in enumerate(line):
+            if character != "#":
+                continue
+            for direction in ("n", "s"):
+                row_offset, col_offset = offsets[direction]
+                next_row = row_index + row_offset
+                next_col = col_index + col_offset
+                if next_row < 0 or next_row >= len(lines):
+                    continue
+                if next_col < 0 or next_col >= len(lines[next_row]):
+                    continue
+                neighbor = lines[next_row][next_col]
+                if neighbor not in {"|", "-", "+"}:
+                    continue
+                if next_row in lattice_rows:
+                    continue
+                if opposites[direction] not in pixel_resolved_directions(lines, next_row, next_col):
+                    continue
+                stack.append((next_row, next_col))
+
+    while stack:
+        row_index, col_index = stack.pop()
+        if (row_index, col_index) in pipe_cells:
+            continue
+        pipe_cells.add((row_index, col_index))
+
+        for direction in pixel_resolved_directions(lines, row_index, col_index):
+            row_offset, col_offset = offsets[direction]
+            next_row = row_index + row_offset
+            next_col = col_index + col_offset
+            if next_row < 0 or next_row >= len(lines):
+                continue
+            if next_col < 0 or next_col >= len(lines[next_row]):
+                continue
+            neighbor = lines[next_row][next_col]
+            if neighbor not in {"|", "-", "+"}:
+                continue
+            if next_row in lattice_rows:
+                continue
+            if opposites[direction] not in pixel_resolved_directions(lines, next_row, next_col):
+                continue
+            stack.append((next_row, next_col))
+
+    return pipe_cells
+
+
+def draw_pixel_segments(draw, x: int, y: int, tile: int, stroke: int, directions: set[str], color: str) -> None:
+    if not directions:
+        return
+
+    center_x = x + tile // 2
+    center_y = y + tile // 2
+
+    if "n" in directions:
+        draw.rectangle([(center_x - stroke // 2, y), (center_x + stroke // 2, center_y)], fill=color)
+    if "s" in directions:
+        draw.rectangle([(center_x - stroke // 2, center_y), (center_x + stroke // 2, y + tile)], fill=color)
+    if "w" in directions:
+        draw.rectangle([(x, center_y - stroke // 2), (center_x, center_y + stroke // 2)], fill=color)
+    if "e" in directions:
+        draw.rectangle([(center_x, center_y - stroke // 2), (x + tile, center_y + stroke // 2)], fill=color)
+
+    draw.rectangle(
+        [
+            (center_x - stroke // 2, center_y - stroke // 2),
+            (center_x + stroke // 2, center_y + stroke // 2),
+        ],
+        fill=color,
+    )
+
+
+def render_png_pixel(text: str, output_path: Path, scale: int) -> None:
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Pillow is required for --png-out.") from exc
+
+    if scale <= 0:
+        raise ValueError("png_scale must be positive.")
+
+    title, body_lines = split_title_and_body(text)
+    body_lines = body_lines or [""]
+    pipe_cells = trace_pipe_cells(body_lines)
+
+    title_font = load_monospace_font(20 * scale)
+    glyph_font = load_monospace_font(16 * scale)
+    tile = 16 * scale
+    padding_x = 24 * scale
+    padding_y = 24 * scale
+    title_gap = 18 * scale if title else 0
+    stroke = max(2, 2 * scale)
+
+    colors = {
+        "background": "#161821",
+        "wall": "#7aa2f7",
+        "pipe": "#f7768e",
+        "connector": "#f6c177",
+        "arrow": "#9ece6a",
+        "text": "#e5e9f0",
+        "title": "#f5f7ff",
+    }
+
+    title_bbox = title_font.getbbox(title or "M")
+    title_width = (title_bbox[2] - title_bbox[0]) if title else 0
+    title_height = (title_bbox[3] - title_bbox[1]) if title else 0
+    body_width_chars = max(len(line) for line in body_lines)
+    body_height_rows = len(body_lines)
+
+    image_width = max(body_width_chars * tile, title_width) + padding_x * 2
+    image_height = body_height_rows * tile + padding_y * 2 + title_height + title_gap
+
+    image = Image.new("RGB", (image_width, image_height), colors["background"])
+    draw = ImageDraw.Draw(image)
+
+    if title:
+        draw.text((padding_x, padding_y), title, fill=colors["title"], font=title_font)
+
+    origin_y = padding_y + title_height + title_gap
+
+    for row_index, line in enumerate(body_lines):
+        for col_index, character in enumerate(line):
+            x = padding_x + col_index * tile
+            y = origin_y + row_index * tile
+
+            if character == "-":
+                line_color = colors["pipe"] if (row_index, col_index) in pipe_cells else colors["wall"]
+                draw_pixel_segments(draw, x, y, tile, stroke, pixel_resolved_directions(body_lines, row_index, col_index), line_color)
+            elif character == "|":
+                line_color = colors["pipe"] if (row_index, col_index) in pipe_cells else colors["wall"]
+                draw_pixel_segments(draw, x, y, tile, stroke, pixel_resolved_directions(body_lines, row_index, col_index), line_color)
+            elif character == "+":
+                directions = pixel_resolved_directions(body_lines, row_index, col_index)
+                line_color = colors["pipe"] if (row_index, col_index) in pipe_cells else colors["wall"]
+                draw_pixel_segments(draw, x, y, tile, stroke, directions, line_color)
+            elif character == "#":
+                draw_pixel_segments(draw, x, y, tile, stroke, pixel_resolved_directions(body_lines, row_index, col_index), colors["connector"])
+                center_x = x + tile // 2
+                center_y = y + tile // 2
+                dot = max(2, tile // 8)
+                draw.rectangle(
+                    [(center_x - dot, center_y - dot), (center_x + dot, center_y + dot)],
+                    fill=colors["connector"],
+                )
+            elif character == "v":
+                draw_pixel_arrow_down(draw, x, y, tile, colors["arrow"])
+            elif character != " ":
+                center_x = x + tile // 2
+                center_y = y + tile // 2
+                bbox = glyph_font.getbbox(character)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                text_x = x + (tile - text_width) / 2
+                text_y = y + (tile - text_height) / 2 - bbox[1]
+                draw.text((text_x, text_y), character, fill=colors["text"], font=glyph_font)
+
+    image.save(output_path)
+
+
+def render_png(text: str, output_path: Path, scale: int, style: str) -> None:
+    if style == "pixel":
+        render_png_pixel(text, output_path, scale)
+        return
+
+    render_png_standard(text, output_path, scale)
+
+
 def main() -> None:
     args = parse_args()
-    diagram = load_diagram(args.spec)
-    ascii_output = render_ascii(diagram)
+    ascii_output = load_ascii_input(args)
+    ascii_out, png_out = derive_output_paths(args)
 
     if args.format_spec_out:
+        if not args.spec:
+            raise ValueError("--format-spec-out only works together with --spec.")
+        diagram = load_diagram(args.spec)
         args.format_spec_out.parent.mkdir(parents=True, exist_ok=True)
         args.format_spec_out.write_text(f"{json.dumps(canonical_spec(diagram), indent=2)}\n")
 
     if args.stdout or not args.ascii_out and not args.png_out:
         print(ascii_output)
 
-    if args.ascii_out:
-        args.ascii_out.parent.mkdir(parents=True, exist_ok=True)
-        args.ascii_out.write_text(ascii_output)
+    ascii_out.parent.mkdir(parents=True, exist_ok=True)
+    ascii_out.write_text(ascii_output)
 
-    if args.png_out:
-        args.png_out.parent.mkdir(parents=True, exist_ok=True)
-        render_png(ascii_output, args.png_out, args.png_scale)
+    png_out.parent.mkdir(parents=True, exist_ok=True)
+    render_png(ascii_output, png_out, args.png_scale, args.png_style)
+
+    print(f"ASCII_OUT={ascii_out}")
+    print(f"PNG_OUT={png_out}")
 
 
 if __name__ == "__main__":
