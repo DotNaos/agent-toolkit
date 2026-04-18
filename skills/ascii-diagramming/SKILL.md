@@ -1,21 +1,21 @@
 ---
-name: ascii-grid-diagrams
-description: Format raw ASCII diagrams and render crisp PNG previews from direct text, text files, or an optional grid JSON spec. Use when ASCII needs to be cleaned up, padded correctly, and attached as an image without hand-fixing spacing.
+name: ascii-diagramming
+description: General-purpose ASCII diagramming tool. Format raw ASCII, keep spacing rectangular, and render crisp PNG previews from direct text, text files, or an optional structured box-and-wire JSON helper.
 ---
 
-# ASCII Grid Diagrams
+# ASCII Diagramming
 
-Use this skill when an ASCII diagram needs to be cleaned up and turned into a readable image.
+Use this skill when an ASCII diagram needs to be cleaned up, normalized, and turned into a readable image.
 
-This skill is generic.
-Do not rewrite the script for each diagram.
+This skill is meant to be general-purpose.
+Do not rewrite the script for each diagram or project.
 
 The normal input is:
 
 - raw ASCII passed with `--text`
 - or a text file passed with `--text-file`
 
-The JSON grid mode is only an optional helper for quick generation.
+The structured JSON mode is only an optional helper for quick generation.
 It is not the default workflow.
 
 ## Default workflow
@@ -26,13 +26,29 @@ It is not the default workflow.
 4. Let the script pad and normalize the lines.
 5. Render a PNG preview.
 
+This is the mode you should reuse in projects like `Todo Graph`.
+The usual flow there is: build the ASCII in a normal text file, run the tool, inspect the PNG, and iterate on the text file rather than patching the renderer.
+
 Preferred rule:
 
 - small one-off diagram: `--text`
 - anything bigger or multi-line: `--text-file`
 
 Do not change the renderer just because a new diagram has different content.
-Only change the renderer when the formatting behavior itself is wrong.
+Only change the renderer when the formatting or rendering behavior itself is wrong.
+
+## Good fits
+
+Use this tool for things like:
+
+- box-and-arrow sketches
+- roadmap or dependency diagrams
+- trees and branching flows
+- small UI wireframes made from ASCII
+- hand-written diagrams that need consistent spacing before sharing
+
+Not every diagram needs the structured helper.
+If you already have acceptable ASCII, the main value here is formatting plus PNG rendering.
 
 ## Agent workflow
 
@@ -49,7 +65,7 @@ If the diagram is tiny, `--text` is acceptable, but `--text-file` is the safer d
 
 By default the script writes timestamped files into:
 
-- [`skills/ascii-grid-diagrams/.artifacts/`](/Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/.artifacts)
+- [`skills/ascii-diagramming/.artifacts/`](/Users/oli/projects/agent-toolkit/skills/ascii-diagramming/.artifacts)
 
 This avoids dumping raw files into `/tmp` and avoids overwriting older renders.
 
@@ -63,9 +79,9 @@ That overwrites the same text file with formatted ASCII and, unless overridden, 
 ## Files
 
 - Renderer:
-  [`scripts/render_ascii_diagram.py`](/Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/scripts/render_ascii_diagram.py)
-- Optional example grid spec:
-  [`assets/examples/roadmap-grid.json`](/Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/assets/examples/roadmap-grid.json)
+  [`scripts/render_ascii_diagram.py`](/Users/oli/projects/agent-toolkit/skills/ascii-diagramming/scripts/render_ascii_diagram.py)
+- Optional structured example spec:
+  [`assets/examples/roadmap-grid.json`](/Users/oli/projects/agent-toolkit/skills/ascii-diagramming/assets/examples/roadmap-grid.json)
 
 ## Common usage
 
@@ -73,7 +89,7 @@ Format a text file and render a PNG:
 
 ```bash
 /Users/oli/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  /Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/scripts/render_ascii_diagram.py \
+  /Users/oli/projects/agent-toolkit/skills/ascii-diagramming/scripts/render_ascii_diagram.py \
   --text-file /tmp/diagram.txt \
   --in-place \
   --png-scale 3 \
@@ -84,17 +100,17 @@ Pass short raw ASCII directly:
 
 ```bash
 /Users/oli/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  /Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/scripts/render_ascii_diagram.py \
+  /Users/oli/projects/agent-toolkit/skills/ascii-diagramming/scripts/render_ascii_diagram.py \
   --text $'Title\n\n+--+\n|A |\n+--+' \
   --stdout
 ```
 
-Use the optional structured grid helper:
+Use the optional structured box-and-wire helper:
 
 ```bash
 /Users/oli/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  /Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/scripts/render_ascii_diagram.py \
-  --spec /Users/oli/projects/agent-toolkit/skills/ascii-grid-diagrams/assets/examples/roadmap-grid.json \
+  /Users/oli/projects/agent-toolkit/skills/ascii-diagramming/scripts/render_ascii_diagram.py \
+  --spec /Users/oli/projects/agent-toolkit/skills/ascii-diagramming/assets/examples/roadmap-grid.json \
   --format-spec-out /tmp/roadmap-grid.formatted.json \
   --ascii-out /tmp/roadmap-grid.txt \
   --png-scale 3 \
@@ -113,8 +129,8 @@ Use the optional structured grid helper:
 - `--png-out` overrides the default PNG output path.
 - `--png-style pixel` renders a colored, blocky preview instead of the default monochrome line preview.
 - `--png-scale` increases PNG resolution. Use `3` or `4` for crisp previews in chat.
-- `--spec` uses the optional grid JSON helper format.
-- `--format-spec-out` writes a canonical spec, but only when using `--spec`.
+- `--spec` uses the optional structured JSON helper format.
+- `--format-spec-out` writes a canonical structured spec, but only when using `--spec`.
 
 ## What gets formatted
 
@@ -125,10 +141,13 @@ For plain text input the script:
 - pads all diagram rows to the same width
 - preserves a `Title` + blank line + body layout if present
 
-## Optional grid JSON mode
+## Optional structured JSON mode
 
-The structured mode is only for convenience when the agent wants help generating ASCII quickly.
+The structured mode is only for convenience when the agent wants help generating box-and-wire ASCII quickly.
 It should not replace the default `--text` or `--text-file` workflow.
+
+Think of it as a helper for rectangular diagrams with boxes, merged regions, and routed connections.
+It is not the definition of the whole skill.
 
 Each row contains explicit cells with:
 

@@ -61,8 +61,8 @@ class Diagram:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Render validated ASCII grid diagrams.")
-    parser.add_argument("--spec", type=Path, help="Path to the grid JSON spec.")
+    parser = argparse.ArgumentParser(description="Format ASCII diagrams and render PNG previews.")
+    parser.add_argument("--spec", type=Path, help="Path to an optional structured box-and-wire JSON spec.")
     parser.add_argument("--text", help="Raw ASCII text input.")
     parser.add_argument("--text-file", type=Path, help="Path to a text file containing ASCII input.")
     parser.add_argument(
@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
         default="diagram",
         help="Base name for timestamped generated files.",
     )
-    parser.add_argument("--format-spec-out", type=Path, help="Write a canonical formatted spec to this file.")
+    parser.add_argument("--format-spec-out", type=Path, help="Write a canonical formatted structured spec to this file.")
     parser.add_argument("--ascii-out", type=Path, help="Write ASCII output to this file.")
     parser.add_argument("--png-out", type=Path, help="Write PNG preview to this file.")
     parser.add_argument(
