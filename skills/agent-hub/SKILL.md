@@ -13,7 +13,9 @@ Use this skill when you need to start or operate the Agent Hub web UI instead of
 ./scripts/agent-hub-dev.sh
 ```
 
-Then open <http://127.0.0.1:5173>.
+Then open the printed `.localhost` URL.
+
+The standard dev entrypoint is portless-only. A direct start is blocked unless the user explicitly opts in with `AGENT_HUB_DEV_ALLOW_DIRECT=1`.
 
 ## What it provides
 

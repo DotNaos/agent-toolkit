@@ -134,7 +134,7 @@ go build -o bin/agent-memory ./cmd/agent-memory
 `agent-hub` is a local web app for realtime group chat (`owner` + agents) with mandatory human-in-the-loop approvals for risky actions.
 The UI stack uses `React + TailwindCSS + shadcn/ui`.
 
-Run (one command, bun-based):
+Run (one command, bun-based, enforced through portless):
 
 ```bash
 ./scripts/agent-hub-dev.sh
@@ -142,7 +142,14 @@ Run (one command, bun-based):
 
 Then open:
 
-- http://127.0.0.1:5173
+- the printed `.localhost` URL from the script output
+
+The standard dev entrypoint now requires portless and will refuse a direct start.
+If you intentionally need to bypass portless for one run, use:
+
+```bash
+AGENT_HUB_DEV_ALLOW_DIRECT=1 ./scripts/agent-hub-dev.sh
+```
 
 Default behavior:
 
