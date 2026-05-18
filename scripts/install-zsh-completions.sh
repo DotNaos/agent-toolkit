@@ -8,6 +8,7 @@ BIN_DIR="${REPO_ROOT}/bin"
 mkdir -p "$COMPLETIONS_DIR" "$BIN_DIR"
 
 go build -o "${BIN_DIR}/agent-chat" "${REPO_ROOT}/cmd/agent-chat"
+go build -o "${BIN_DIR}/codex-handover" "${REPO_ROOT}/cmd/codex-handover"
 go build -o "${BIN_DIR}/agent-memory" "${REPO_ROOT}/cmd/agent-memory"
 go build -o "${BIN_DIR}/ui-loop" "${REPO_ROOT}/cmd/ui-loop"
 go build -o "${BIN_DIR}/agent-hub" "${REPO_ROOT}/cmd/agent-hub"
@@ -31,6 +32,7 @@ install_completion() {
 }
 
 install_completion "agent-chat" "${BIN_DIR}/agent-chat"
+install_completion "codex-handover" "${BIN_DIR}/codex-handover" "_codex_handover" "false"
 install_completion "agent-memory" "${BIN_DIR}/agent-memory"
 install_completion "ui-loop" "${BIN_DIR}/ui-loop"
 install_completion "agent-hub" "${BIN_DIR}/agent-hub"
