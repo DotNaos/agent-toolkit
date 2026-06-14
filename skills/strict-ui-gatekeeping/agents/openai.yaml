@@ -1,0 +1,4 @@
+interface:
+  display_name: "Strict UI Gatekeeping"
+  short_description: "Block invalid UI states before render"
+  default_prompt: "Use $strict-ui-gatekeeping to redesign this UI flow so invalid screens and actions are unreachable without proven preconditions."

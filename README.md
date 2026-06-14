@@ -24,6 +24,7 @@ Every tool in this monorepo must ship a matching agent skill.
     - `skills/repo-branch-protection/SKILL.md`
     - `skills/readme-tutorial-flow/SKILL.md`
     - `skills/evidence-driven-validation/SKILL.md`
+    - `skills/strict-ui-gatekeeping/SKILL.md`
 
 Install all skills from this repo (global, non-interactive):
 
