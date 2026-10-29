@@ -35,6 +35,7 @@ type AdapterConfig struct {
 	TimeoutSec               int           `json:"timeout_sec"`
 	SupportsGuardedExecution bool          `json:"supports_guarded_execution"`
 	DefaultModel             string        `json:"default_model,omitempty"`
+	DefaultReasoningEffort   string        `json:"default_reasoning_effort,omitempty"`
 	Models                   []ModelConfig `json:"models,omitempty"`
 	SupportedCapabilities    []string      `json:"supported_capabilities,omitempty"`
 }
@@ -52,6 +53,7 @@ type AdapterInfo struct {
 	TimeoutSec               int           `json:"timeout_sec"`
 	SupportsGuardedExecution bool          `json:"supports_guarded_execution"`
 	DefaultModel             string        `json:"default_model,omitempty"`
+	DefaultReasoningEffort   string        `json:"default_reasoning_effort,omitempty"`
 	Models                   []ModelConfig `json:"models,omitempty"`
 	SupportedCapabilities    []string      `json:"supported_capabilities,omitempty"`
 }
@@ -175,6 +177,7 @@ func (c Config) EnabledAdapters() []AdapterInfo {
 			TimeoutSec:               adapter.TimeoutSec,
 			SupportsGuardedExecution: adapter.SupportsGuardedExecution,
 			DefaultModel:             adapter.DefaultModel,
+			DefaultReasoningEffort:   adapter.DefaultReasoningEffort,
 			Models:                   append([]ModelConfig(nil), adapter.Models...),
 			SupportedCapabilities:    append([]string(nil), normalizeCapabilities(adapter.SupportedCapabilities)...),
 		})

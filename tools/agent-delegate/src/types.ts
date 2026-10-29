@@ -107,6 +107,7 @@ export type AdapterConfig = {
   timeout_sec?: number;
   supports_guarded_execution: boolean;
   default_model?: string;
+  default_reasoning_effort?: string;
   models?: ModelConfig[];
   supported_capabilities?: Capability[];
 };

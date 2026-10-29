@@ -239,7 +239,10 @@ async function runDelegate(rawRequest: Request, approvalGranted: boolean, config
   return withOutputDir(async (outputDir) => {
     const startedAt = Date.now();
     const { promptBody, snapshot } = await prepareRunContext(baseDir, { ...request, model: resolvedModel }, allowedPaths);
-    const { args, outputFile } = buildArgs({ ...request, model: resolvedModel }, adapter, promptBody, outputDir);
+    const effectiveAdapter = request.adapter === "codex" && !request.model && adapter.default_reasoning_effort
+      ? { ...adapter, args: [...(adapter.args ?? []), "-c", `model_reasoning_effort=${JSON.stringify(adapter.default_reasoning_effort)}`] }
+      : adapter;
+    const { args, outputFile } = buildArgs({ ...request, model: resolvedModel }, effectiveAdapter, promptBody, outputDir);
     const proc = Bun.spawn([resolveAdapterCommand(request.adapter, adapter), ...args], {
       cwd: baseDir,
       env: process.env,

@@ -62,6 +62,7 @@ export function listEnabledAdapters(config: LoadedConfig) {
       timeout_sec: adapter.timeout_sec ?? config.defaults.timeout_sec,
       supports_guarded_execution: adapter.supports_guarded_execution,
       default_model: adapter.default_model ?? "",
+      default_reasoning_effort: adapter.default_reasoning_effort ?? "",
       supported_capabilities: adapter.supported_capabilities ?? ["read", "write", "exec", "network", "git"],
       models: (adapter.models ?? []).map((model) => ({
         ...model,
