@@ -3,6 +3,28 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+test("Codex default effort applies only when the model is omitted", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "delegate-default-"));
+  const adapter = path.join(dir, "codex");
+  const config = path.join(dir, "config.json");
+  await writeFile(adapter, '#!/bin/sh\nprintf "%s\\n" "$@" > "$ARG_LOG"\n', { mode: 0o755 });
+  await writeFile(config, JSON.stringify({ adapters: { codex: {
+    enabled: true, command: adapter, supports_guarded_execution: true,
+    default_model: "gpt-6.1-terra", default_reasoning_effort: "xhigh",
+    models: [{ id: "gpt-6.1-terra" }, { id: "gpt-5-mini" }],
+  } } }));
+  for (const explicit of [false, true]) {
+    const log = path.join(dir, explicit ? "explicit" : "default");
+    const args = ["bun", "run", "src/index.ts", "run", "-p", "Inspect", "--adapter", "codex", "--config", config, "--cwd", dir];
+    if (explicit) args.push("-m", "codex/gpt-5-mini");
+    const proc = Bun.spawn(args, { cwd: process.cwd(), env: { ...process.env, ARG_LOG: log }, stdout: "pipe", stderr: "pipe" });
+    expect(await proc.exited).toBe(0);
+    const actual = await readFile(log, "utf8");
+    expect(actual).toContain(explicit ? "gpt-5-mini" : "gpt-6.1-terra");
+    expect(actual.includes('model_reasoning_effort="xhigh"')).toBe(!explicit);
+  }
+});
+
 test("run blocks guarded execution without approval", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "agent-delegate-test-"));
   const configPath = path.join(tempDir, "agent-delegate.json");
