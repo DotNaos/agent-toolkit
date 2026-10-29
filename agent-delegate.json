@@ -69,12 +69,13 @@
     "codex": {
       "enabled": true,
       "command": "codex",
-      "args": [],
+      "args": ["-c", "model_reasoning_effort=\"xhigh\""],
       "timeout_sec": 180,
       "supports_guarded_execution": true,
       "supported_capabilities": ["read", "write", "exec", "network", "git"],
-      "default_model": "gpt-5.4",
+      "default_model": "gpt-6.1-terra",
       "models": [
+        { "id": "gpt-6.1-terra" },
         { "id": "gpt-5.4" },
         { "id": "gpt-5-mini" }
       ]
