@@ -225,3 +225,7 @@ Tools must be developed in isolation so multiple agents can work in parallel wit
     - isolated package paths
     - tests in its own package tree
 - Keep the public CLI contract stable per tool (JSON output shape should not accidentally change across tools).
+
+## Lizenz
+
+GNU Affero General Public License v3.0 or later, siehe [LICENSE](LICENSE). © Oliver Schütz
